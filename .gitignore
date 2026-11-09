@@ -1,0 +1,28 @@
+# Build output
+.build/
+.swiftpm/
+build.noindex/
+*.xcodeproj/xcuserdata/
+
+# Dev runs: their indexes, logs, lab hub state (never the real ~/.luoke-search)
+.dev/
+
+# Evals or corpora that name your own files
+*.local.json
+evals/local/
+
+# Python helpers
+__pycache__/
+*.pyc
+.venv/
+
+# Your signing identity for local builds
+.sign-id
+
+.DS_Store
+
+# testbed/zh's photos, recordings and films: macOS's own pictures and voices, made locally
+# (bash scripts/testbed/make_zh_media.sh)
+testbed/zh/corpus/photos/
+testbed/zh/corpus/audio/
+testbed/zh/corpus/video/

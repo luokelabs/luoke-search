@@ -1,0 +1,4 @@
+Q3 vendor invoices
+INV-88412  Cloud hosting, September  $1,240.00  paid
+INV-88519  Design agency, logo refresh  $3,800.00  pending approval
+INV-88602  Office chairs x6  $2,160.00  paid

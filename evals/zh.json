@@ -1,0 +1,366 @@
+{
+ "base": "~/DigUpTestbed/zh/corpus",
+ "queries": [
+  {
+   "q": "猫做完手术要注意什么",
+   "expect": [
+    "docs/note_0412.txt"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "伊丽莎白圈",
+   "expect": [
+    "docs/note_0412.txt"
+   ],
+   "tag": "doc-word"
+  },
+  {
+   "q": "输入法出候选太慢的问题后来怎么解决的",
+   "expect": [
+    "docs/周报-第41周.md"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "为什么要把邮件分类挪到本地",
+   "expect": [
+    "docs/会议纪要 1009.md"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "那道要用冰糖炒糖色的菜",
+   "expect": [
+    "docs/红烧肉做法.md"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "用饮料煮鸡肉",
+   "expect": [
+    "docs/可乐鸡翅.txt"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "体检哪项指标不正常",
+   "expect": [
+    "docs/体检报告解读.txt"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "痛风要少吃什么",
+   "expect": [
+    "docs/体检报告解读.txt"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "被人追尾之后保险怎么赔的",
+   "expect": [
+    "docs/车险理赔.md"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "RPT-2026-118734",
+   "expect": [
+    "docs/车险理赔.md"
+   ],
+   "tag": "doc-word"
+  },
+  {
+   "q": "卫生间防水做多高",
+   "expect": [
+    "docs/装修预算.md"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "地方政府靠卖地融资",
+   "expect": [
+    "docs/读书笔记-置身事内.md"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "离职以后不能去竞争对手公司",
+   "expect": [
+    "docs/劳动合同摘要.docx"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "年会上的相声",
+   "expect": [
+    "docs/年会节目.docx"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "孩子打疫苗是哪天",
+   "expect": [
+    "docs/宝宝疫苗.rtf"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "国庆去看熊猫的安排",
+   "expect": [
+    "docs/成都行程.html"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "本地模型为什么适合做输入法",
+   "expect": [
+    "docs/草稿.md"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "照片备份要存几份",
+   "expect": [
+    "docs/README-备份.txt"
+   ],
+   "tag": "doc-fuzzy"
+  },
+  {
+   "q": "东京之行去箱根泡温泉",
+   "expect": [
+    "docs/Tokyo trip.md"
+   ],
+   "tag": "zh→en"
+  },
+  {
+   "q": "还没审批的设计费发票",
+   "expect": [
+    "docs/Q3 invoice list.txt"
+   ],
+   "tag": "zh→en"
+  },
+  {
+   "q": "INV-88519",
+   "expect": [
+    "docs/Q3 invoice list.txt"
+   ],
+   "tag": "doc-word"
+  },
+  {
+   "q": "cat surgery aftercare",
+   "expect": [
+    "docs/note_0412.txt"
+   ],
+   "tag": "en→zh"
+  },
+  {
+   "q": "kitchen renovation budget",
+   "expect": [
+    "docs/装修预算.md"
+   ],
+   "tag": "en→zh"
+  },
+  {
+   "q": "租房合同里能不能养狗",
+   "expect": [
+    "pdf/租赁合同.pdf@2-2"
+   ],
+   "tag": "pdf-page"
+  },
+  {
+   "q": "房租多少押金怎么付",
+   "expect": [
+    "pdf/租赁合同.pdf@1-1"
+   ],
+   "tag": "pdf-page"
+  },
+  {
+   "q": "提前退租要赔多少钱",
+   "expect": [
+    "pdf/租赁合同.pdf@3-3"
+   ],
+   "tag": "pdf-page"
+  },
+  {
+   "q": "静安区",
+   "expect": [
+    "pdf/租赁合同.pdf@1-1"
+   ],
+   "tag": "pdf-word"
+  },
+  {
+   "q": "咖啡店的小票",
+   "expect": [
+    "pdf/扫描件_20260914.pdf"
+   ],
+   "tag": "scan"
+  },
+  {
+   "q": "燕麦拿铁",
+   "expect": [
+    "pdf/扫描件_20260914.pdf"
+   ],
+   "tag": "scan-word"
+  },
+  {
+   "q": "付款失败余额不够",
+   "expect": [
+    "screenshots/截屏2026-10-11 下午3.12.08.png"
+   ],
+   "tag": "shot"
+  },
+  {
+   "q": "E1024",
+   "expect": [
+    "screenshots/截屏2026-10-11 下午3.12.08.png"
+   ],
+   "tag": "shot-word"
+  },
+  {
+   "q": "去成都的机票",
+   "expect": [
+    "screenshots/截屏2026-09-20 上午10.05.33.png"
+   ],
+   "tag": "shot"
+  },
+  {
+   "q": "约周末吃火锅的聊天",
+   "expect": [
+    "screenshots/Screenshot 2026-10-08 at 21.44.10.png"
+   ],
+   "tag": "shot"
+  },
+  {
+   "q": "显卡显存不够报错",
+   "expect": [
+    "screenshots/Screenshot 2026-10-02 at 11.20.51.png"
+   ],
+   "tag": "shot"
+  },
+  {
+   "q": "快递放在哪里了取件码",
+   "expect": [
+    "screenshots/截屏2026-10-13 下午6.30.02.png"
+   ],
+   "tag": "shot"
+  },
+  {
+   "q": "斑马",
+   "expect": [
+    "photos/IMG_1001.heic",
+    "video/VID_20260918.mp4@6-12"
+   ],
+   "tag": "zh→img"
+  },
+  {
+   "q": "猫头鹰",
+   "expect": [
+    "photos/IMG_1002.heic"
+   ],
+   "tag": "zh→img"
+  },
+  {
+   "q": "企鹅",
+   "expect": [
+    "photos/IMG_1003.heic",
+    "video/VID_20260918.mp4@0-6"
+   ],
+   "tag": "zh→img"
+  },
+  {
+   "q": "向日葵",
+   "expect": [
+    "photos/IMG_1005.heic"
+   ],
+   "tag": "zh→img"
+  },
+  {
+   "q": "红玫瑰",
+   "expect": [
+    "photos/IMG_1007.heic"
+   ],
+   "tag": "zh→img"
+  },
+  {
+   "q": "拉小提琴",
+   "expect": [
+    "photos/IMG_1008.heic"
+   ],
+   "tag": "zh→img"
+  },
+  {
+   "q": "打雷闪电",
+   "expect": [
+    "photos/IMG_1011.heic"
+   ],
+   "tag": "zh→img"
+  },
+  {
+   "q": "从太空看地球",
+   "expect": [
+    "photos/IMG_1012.heic"
+   ],
+   "tag": "zh→img"
+  },
+  {
+   "q": "沙漠里的植物",
+   "expect": [
+    "photos/IMG_1014.heic"
+   ],
+   "tag": "zh→img"
+  },
+  {
+   "q": "圣诞节的姜饼人",
+   "expect": [
+    "photos/IMG_1018.heic"
+   ],
+   "tag": "zh→img"
+  },
+  {
+   "q": "播客里讲失眠的那段",
+   "expect": [
+    "audio/播客第12期.m4a@20-35"
+   ],
+   "tag": "audio-moment"
+  },
+  {
+   "q": "跑步膝盖疼怎么办",
+   "expect": [
+    "audio/播客第12期.m4a@40-60"
+   ],
+   "tag": "audio-moment"
+  },
+  {
+   "q": "为什么要在自己电脑上跑模型",
+   "expect": [
+    "audio/播客第12期.m4a@0-10",
+    "docs/草稿.md"
+   ],
+   "tag": "audio-moment"
+  },
+  {
+   "q": "下班要买的菜",
+   "expect": [
+    "audio/新录音 3.m4a"
+   ],
+   "tag": "audio"
+  },
+  {
+   "q": "厨房水龙头漏水要找房东",
+   "expect": [
+    "audio/memo 0927.m4a"
+   ],
+   "tag": "zh→en-audio"
+  },
+  {
+   "q": "西湖的荷花",
+   "expect": [
+    "video/VID_20260715.mp4",
+    "photos/IMG_1006.heic"
+   ],
+   "tag": "video"
+  }
+ ]
+}

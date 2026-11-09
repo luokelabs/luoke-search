@@ -1,0 +1,12 @@
+{
+ "base": "~/DigUpTestbed/zh/receipts",
+ "queries": [
+  {"q": "港湾咖啡的小票", "expect": ["港湾咖啡小票_20261005.pdf@1-1"], "tag": "scan-mixed"},
+  {"q": "Harbor Coffee receipt", "expect": ["港湾咖啡小票_20261005.pdf@1-1"], "tag": "scan-mixed-en"},
+  {"q": "cold brew", "expect": ["港湾咖啡小票_20261005.pdf@1-1"], "tag": "scan-mixed-en"},
+  {"q": "会员折扣", "expect": ["港湾咖啡小票_20261005.pdf@1-1"], "tag": "scan-mixed"},
+  {"q": "黄油可颂多少钱", "expect": ["港湾咖啡小票_20261005.pdf@1-1"], "tag": "scan-mixed"},
+  {"q": "用支付宝付的咖啡小票", "expect": ["港湾咖啡小票_20261005.pdf@1-1"], "tag": "scan-mixed"},
+  {"q": "oat latte 大杯", "expect": ["港湾咖啡小票_20261005.pdf@1-1"], "tag": "scan-mixed-en"}
+ ]
+}

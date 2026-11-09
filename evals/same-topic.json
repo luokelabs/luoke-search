@@ -1,0 +1,56 @@
+{"base": "~/DigUpTestbed",
+ "queries": [
+  {"q": "企鹅的照片", "expect": ["动物园/IMG_4101.jpg"], "tag": "img-named"},
+  {"q": "拍的斑马", "expect": ["动物园/IMG_4102.jpg"], "tag": "img-named"},
+  {"q": "猫头鹰的照片", "expect": ["动物园/IMG_4103.jpg"], "tag": "img-named"},
+  {"q": "鹦鹉的照片", "expect": ["动物园/IMG_4104.jpg"], "tag": "img-unnamed"},
+  {"q": "photo of an eagle", "expect": ["动物园/IMG_4105.jpg"], "tag": "img-named"},
+  {"q": "动物园门票多少钱", "expect": ["动物园/动物园一日游.md"], "tag": "doc"},
+  {"q": "猛禽飞行表演几点开始", "expect": ["动物园/动物园一日游.md"], "tag": "doc"},
+
+  {"q": "向日葵的照片", "expect": ["阳台花园/IMG_4111.jpg"], "tag": "img-named"},
+  {"q": "红玫瑰的照片", "expect": ["阳台花园/IMG_4112.jpg"], "tag": "img-named"},
+  {"q": "荷花的照片", "expect": ["阳台花园/IMG_4113.jpg"], "tag": "img-unnamed"},
+  {"q": "蒲公英的照片", "expect": ["阳台花园/IMG_4115.jpg"], "tag": "img-unnamed"},
+  {"q": "黄色雏菊的照片", "expect": ["阳台花园/IMG_4114.jpg"], "tag": "img-named"},
+  {"q": "玫瑰夏天怎么浇水", "expect": ["阳台花园/阳台种花笔记.md"], "tag": "doc"},
+  {"q": "向日葵什么时候播种", "expect": ["阳台花园/阳台种花笔记.md"], "tag": "doc"},
+
+  {"q": "钢琴的照片", "expect": ["乐器课/IMG_4121.jpg"], "tag": "img-named"},
+  {"q": "小提琴的照片", "expect": ["乐器课/IMG_4122.jpg"], "tag": "img-named"},
+  {"q": "吉他的照片", "expect": ["乐器课/IMG_4123.jpg"], "tag": "img-unnamed"},
+  {"q": "鼓的照片", "expect": ["乐器课/IMG_4124.jpg"], "tag": "img-unnamed"},
+  {"q": "钢琴课一节多少钱", "expect": ["乐器课/孩子的钢琴课.md"], "tag": "doc"},
+
+  {"q": "picture of a soccer ball", "expect": ["Sports day/IMG_4131.jpg"], "tag": "img-named"},
+  {"q": "basketball photo", "expect": ["Sports day/IMG_4132.jpg"], "tag": "img-named"},
+  {"q": "a tennis ball", "expect": ["Sports day/IMG_4133.jpg"], "tag": "img-unnamed"},
+  {"q": "photo of a golf ball", "expect": ["Sports day/IMG_4134.jpg"], "tag": "img-unnamed"},
+  {"q": "baseball picture", "expect": ["Sports day/IMG_4135.jpg"], "tag": "img-unnamed"},
+  {"q": "what time does the soccer match start", "expect": ["Sports day/Company sports day.md"], "tag": "doc"},
+  {"q": "what does the winning team get", "expect": ["Sports day/Company sports day.md"], "tag": "doc"},
+
+  {"q": "仙人掌的照片", "expect": ["沙漠徒步/IMG_4141.jpg"], "tag": "img-named"},
+  {"q": "闪电的照片", "expect": ["沙漠徒步/IMG_4142.jpg"], "tag": "img-named"},
+  {"q": "鸟窝的照片", "expect": ["沙漠徒步/IMG_4143.jpg"], "tag": "img-unnamed"},
+  {"q": "徒步每人要带多少水", "expect": ["沙漠徒步/沙漠徒步计划.md"], "tag": "doc"},
+
+  {"q": "姜饼人的照片", "expect": ["圣诞烘焙/IMG_4151.jpg"], "tag": "img-named"},
+  {"q": "幸运饼干的照片", "expect": ["圣诞烘焙/IMG_4152.jpg"], "tag": "img-unnamed"},
+  {"q": "雪花的照片", "expect": ["圣诞烘焙/IMG_4153.jpg"], "tag": "img-unnamed"},
+  {"q": "姜饼要烤多久", "expect": ["圣诞烘焙/姜饼人配方.md"], "tag": "doc"},
+
+  {"q": "空气净化器的发票", "expect": ["家电发票/空气净化器发票.pdf", "家电发票/IMG_4161.jpg"], "tag": "both"},
+  {"q": "空气净化器花了多少钱", "expect": ["家电发票/空气净化器发票.pdf", "家电发票/IMG_4161.jpg"], "tag": "both"},
+  {"q": "拍的那张发票照片", "expect": ["家电发票/IMG_4161.jpg"], "tag": "paper"},
+
+  {"q": "路由器怎么恢复出厂设置", "expect": ["路由器/路由器使用说明.md"], "tag": "doc"},
+  {"q": "路由器后台的截图", "expect": ["路由器/Screenshot 2026-10-12 at 21.15.40.png"], "tag": "screen"},
+  {"q": "路由器连了几台设备", "expect": ["路由器/Screenshot 2026-10-12 at 21.15.40.png"], "tag": "screen"},
+  {"q": "路由器管理地址", "expect": ["路由器/路由器使用说明.md", "路由器/Screenshot 2026-10-12 at 21.15.40.png"], "tag": "both"},
+
+  {"q": "成都出差第二天下午去哪", "expect": ["成都出差/成都三日行程.md"], "tag": "doc"},
+  {"q": "CA4113 几点起飞", "expect": ["成都出差/成都三日行程.md"], "tag": "doc"},
+  {"q": "登机牌的照片", "expect": ["成都出差/IMG_4171.jpg"], "tag": "paper"},
+  {"q": "登机口是哪个", "expect": ["成都出差/IMG_4171.jpg"], "tag": "paper"}
+ ]}

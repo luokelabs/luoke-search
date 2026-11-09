@@ -1,0 +1,10 @@
+{"base": "~/DigUpTestbed",
+ "queries": [
+  {"q": "拿体检报告要带哪些证件", "expect": ["memos/checkup zh Flo.wav"], "tag": "checkup zh Flo"},
+  {"q": "拿体检报告要带哪些证件", "expect": ["memos/checkup zh Eddy.wav"], "tag": "checkup zh Eddy"},
+  {"q": "拿体检报告要带哪些证件", "expect": ["memos/checkup zh Reed.wav"], "tag": "checkup zh Reed"},
+  {"q": "拿体检报告要带哪些证件", "expect": ["memos/checkup zh Meijia.wav"], "tag": "checkup zh Meijia"},
+  {"q": "拿体检报告要带哪些证件", "expect": ["memos/checkup en Samantha.wav"], "tag": "checkup en Samantha"},
+  {"q": "when is the plumber coming", "expect": ["memos/plumber en Samantha.wav"], "tag": "plumber en Samantha"},
+  {"q": "when is the plumber coming", "expect": ["memos/plumber en Flo.wav"], "tag": "plumber en Flo"}
+ ]}

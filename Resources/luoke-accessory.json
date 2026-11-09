@@ -1,0 +1,39 @@
+{
+ "contract": 1,
+ "accessory": "luoke-search",
+ "bundle_id": "ai.luoke.search",
+ "name": "螺壳搜索",
+ "version": "0.1.14",
+ "type": "app",
+ "entry": [],
+ "resident": true,
+ "memory": false,
+ "ui_element": true,
+ "tasks": [{"name": "luoke-search.embed", "kind": "embed", "main": true}],
+ "data": ["~/.luoke-search"],
+ "min_macos": "26.2",
+ "capabilities": {
+  "protocol": 1,
+  "socket": "~/.luoke-search/run/agent.sock",
+  "reports": [
+   {"kind": "needs-setup", "title": "螺壳搜索还没选要搜的地方", "urgency": "normal"},
+   {"kind": "needs-access", "title": "螺壳搜索需要你允许读取", "urgency": "low"},
+   {"kind": "index-ready", "title": "第一遍索引建好了", "urgency": "low"}
+  ],
+  "actions": [
+   {"name": "search_settings_apply", "title": "改螺壳搜索的设置（搜哪些文件夹、要不要照片图库）", "writes": true},
+   {"name": "search_open", "title": "在 Mac 上打开搜到的文件，或在访达中显示", "writes": true}
+  ],
+  "service": {"summary": true, "pages": [{"id": "overview", "title": "概览"}], "ask": {"search": "search_query"}},
+  "permissions": [
+   {"id": "photos", "kind": "system", "owner": "luoke", "tcc": "Photos", "title": "照片图库",
+    "facts": ["仅在开启照片搜索时读取", "只读，不修改图库", "不从 iCloud 下载", "数据不离开本机"],
+    "without": "degrade"},
+      {"id": "folders", "kind": "each-time", "title": "读你选的文件夹",
+       "facts": ["仅读取你选择的文件夹", "首次读取时由 macOS 询问", "数据不离开本机"]},
+      {"id": "quicktime", "kind": "each-time", "title": "让 QuickTime Player 跳到视频的那一秒",
+       "facts": ["仅在播放视频片段时使用", "首次使用时由 macOS 询问"]}
+  ],
+  "listing": {"tagline": "在这台 Mac 上找文件和照片，答案带出处", "category": "效率"}
+ }
+}

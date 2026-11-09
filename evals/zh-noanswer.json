@@ -1,0 +1,190 @@
+{
+ "base": "~/DigUpTestbed/zh/corpus",
+ "queries": [
+  {
+   "q": "狗打完疫苗要注意什么",
+   "expect": [],
+   "tag": "none-near"
+  },
+  {
+   "q": "糖醋排骨怎么做",
+   "expect": [],
+   "tag": "none-near"
+  },
+  {
+   "q": "去西安玩的行程",
+   "expect": [],
+   "tag": "none-near"
+  },
+  {
+   "q": "房贷利率是多少",
+   "expect": [],
+   "tag": "none-near"
+  },
+  {
+   "q": "车辆年检什么时候到期",
+   "expect": [],
+   "tag": "none-near"
+  },
+  {
+   "q": "公积金缴存比例是多少",
+   "expect": [],
+   "tag": "none-near"
+  },
+  {
+   "q": "厨房用什么牌子的瓷砖",
+   "expect": [],
+   "tag": "none-near"
+  },
+  {
+   "q": "血压偏高要注意什么",
+   "expect": [],
+   "tag": "none-near"
+  },
+  {
+   "q": "牙医预约在哪天",
+   "expect": [],
+   "tag": "none-near"
+  },
+  {
+   "q": "猫咪绝育花了多少钱",
+   "expect": [],
+   "tag": "none-near"
+  },
+  {
+   "q": "去大阪的酒店订在哪",
+   "expect": [],
+   "tag": "none-near"
+  },
+  {
+   "q": "年会在哪个酒店办",
+   "expect": [],
+   "tag": "none-near"
+  },
+  {
+   "q": "火星基地的氧气从哪来",
+   "expect": [],
+   "tag": "none-far"
+  },
+  {
+   "q": "量子计算机的原理",
+   "expect": [],
+   "tag": "none-far"
+  },
+  {
+   "q": "世界杯决赛的比分",
+   "expect": [],
+   "tag": "none-far"
+  },
+  {
+   "q": "自行车怎么换内胎",
+   "expect": [],
+   "tag": "none-far"
+  },
+  {
+   "q": "股票分红怎么交税",
+   "expect": [],
+   "tag": "none-far"
+  },
+  {
+   "q": "吉他的和弦怎么按",
+   "expect": [],
+   "tag": "none-far"
+  },
+  {
+   "q": "INV-99173",
+   "expect": [],
+   "tag": "none-word"
+  },
+  {
+   "q": "KX-2025-7788",
+   "expect": [],
+   "tag": "none-word"
+  },
+  {
+   "q": "护照号码",
+   "expect": [],
+   "tag": "none-word"
+  },
+  {
+   "q": "长颈鹿",
+   "expect": [],
+   "tag": "none-img"
+  },
+  {
+   "q": "埃菲尔铁塔",
+   "expect": [],
+   "tag": "none-img"
+  },
+  {
+   "q": "海边的日落",
+   "expect": [],
+   "tag": "none-img"
+  },
+  {
+   "q": "生日蛋糕",
+   "expect": [],
+   "tag": "none-img"
+  },
+  {
+   "q": "弹吉他",
+   "expect": [],
+   "tag": "none-img"
+  },
+  {
+   "q": "踢足球",
+   "expect": [],
+   "tag": "none-img"
+  },
+  {
+   "q": "樱花",
+   "expect": [],
+   "tag": "none-img"
+  },
+  {
+   "q": "微信转账成功的截图",
+   "expect": [],
+   "tag": "none-shot"
+  },
+  {
+   "q": "电费账单的截图",
+   "expect": [],
+   "tag": "none-shot"
+  },
+  {
+   "q": "去上海的高铁票",
+   "expect": [],
+   "tag": "none-shot"
+  },
+  {
+   "q": "录音里讲怎么学英语的那段",
+   "expect": [],
+   "tag": "none-audio"
+  },
+  {
+   "q": "播客里讲减肥的那段",
+   "expect": [],
+   "tag": "none-audio"
+  },
+  {
+   "q": "放烟花的视频",
+   "expect": [],
+   "tag": "none-video"
+  },
+  {
+   "q": "dentist appointment",
+   "expect": [],
+   "tag": "none-en"
+  },
+  {
+   "q": "how to fix a flat bike tire",
+   "expect": [],
+   "tag": "none-en"
+  },
+  {
+   "q": "mortgage interest rate",
+   "expect": [],
+   "tag": "none-en"
+  }
+ ]
+}

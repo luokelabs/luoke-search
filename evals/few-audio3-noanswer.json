@@ -1,0 +1,20 @@
+{"base": "~/DigUpTestbed/audio3",
+ "queries": [
+  {"q": "quote for new bathroom tiles", "expect": [], "tag": "none-near"},
+  {"q": "volunteer shifts at the animal shelter", "expect": [], "tag": "none-near"},
+  {"q": "laptop screen replacement cost", "expect": [], "tag": "none-near"},
+  {"q": "car insurance renewal price", "expect": [], "tag": "none-near"},
+  {"q": "阳台封窗报价多少", "expect": [], "tag": "none-near"},
+  {"q": "孩子学校的家长会是哪天", "expect": [], "tag": "none-near"},
+  {"q": "全程马拉松报名费多少", "expect": [], "tag": "none-near"},
+  {"q": "美国签证面谈约在哪天", "expect": [], "tag": "none-near"},
+  {"q": "how the moon causes tides", "expect": [], "tag": "none-far"},
+  {"q": "how to descale an espresso machine", "expect": [], "tag": "none-far"},
+  {"q": "汉朝是哪一年建立的", "expect": [], "tag": "none-far"},
+  {"q": "一年有几个节气", "expect": [], "tag": "none-far"},
+  {"q": "去银行办信用卡要带什么", "expect": [], "tag": "none-audio"},
+  {"q": "when is the electrician coming to fix the lights", "expect": [], "tag": "none-audio"},
+  {"q": "电影票在哪里预约", "expect": [], "tag": "none-audio"},
+  {"q": "a hot air balloon over fields", "expect": [], "tag": "none-img"},
+  {"q": "城市的夜景", "expect": [], "tag": "none-img"}
+ ]}

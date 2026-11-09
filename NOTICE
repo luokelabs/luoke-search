@@ -1,0 +1,37 @@
+螺壳搜索（luoke-search）
+Copyright 2026 螺壳实验室 Luoke Labs
+
+以 Apache License 2.0 发布，见 LICENSE。「螺壳」「Luoke」的名称、图标和品牌素材不随许可授予（Apache-2.0 第 6 条），用它们发布改版要另经同意。
+
+致谢
+
+螺壳搜索从头写，设计上参考了开源项目 DigUp（https://github.com/ARahim3/DigUp）和螺壳内部在它基础上的改版：怎么读各种文件、按字词和按意思混合排序、和螺壳主控对接的做法。
+
+下面这些测试资料原样拷自 DigUp（1b8671f），按它的 MIT 许可分发，文件旁边的说明里也注明了来源：
+- Tests/Reference/ 里的 vectors.json、screen.png、photo.jpg、speech.wav，以及 texts.json 的前 5 条输入；
+- evals/synthetic.json、evals/multilingual.json。
+别的测试语料和评测题不来自 DigUp。
+
+DigUp 的版权声明和许可全文：
+
+MIT License
+
+Copyright (c) 2026 Abdur Rahim
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

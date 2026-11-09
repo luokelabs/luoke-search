@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>zh_CN</string>
+	<key>CFBundleDisplayName</key>
+	<string>螺壳搜索</string>
+	<key>CFBundleExecutable</key>
+	<string>luoke-search</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>ai.luoke.search</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>螺壳搜索</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.14</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.2</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>螺壳搜索请 QuickTime Player 从搜到的那一刻开始播放视频或录音。</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>螺壳搜索给你选的文件夹建索引，让你能按内容找到文件。索引只在这台 Mac 上。</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>螺壳搜索给你选的文件夹建索引，让你能按内容找到文件。索引只在这台 Mac 上。</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>螺壳搜索给你选的文件夹建索引，让你能按内容找到文件。索引只在这台 Mac 上。</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>螺壳搜索给你选的文件夹建索引，让你能按内容找到文件。索引只在这台 Mac 上。</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>螺壳搜索给你选的文件夹建索引，让你能按内容找到文件。索引只在这台 Mac 上。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>你打开了"搜照片图库"：螺壳搜索读照片和视频的画面来建索引，让你能按画面找到它们。照片不会被改动，也不出这台 Mac。</string>
+</dict>
+</plist>

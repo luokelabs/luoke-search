@@ -1,0 +1,23 @@
+{"base": "~/DigUpTestbed/img5",
+ "queries": [
+  {"q": "quote for new bathroom tiles", "expect": [], "tag": "none-near"},
+  {"q": "volunteer shifts at the animal shelter", "expect": [], "tag": "none-near"},
+  {"q": "laptop screen replacement cost", "expect": [], "tag": "none-near"},
+  {"q": "car insurance renewal price", "expect": [], "tag": "none-near"},
+  {"q": "阳台封窗报价多少", "expect": [], "tag": "none-near"},
+  {"q": "孩子学校的家长会是哪天", "expect": [], "tag": "none-near"},
+  {"q": "全程马拉松报名费多少", "expect": [], "tag": "none-near"},
+  {"q": "美国签证面谈约在哪天", "expect": [], "tag": "none-near"},
+  {"q": "how the moon causes tides", "expect": [], "tag": "none-far"},
+  {"q": "how to descale an espresso machine", "expect": [], "tag": "none-far"},
+  {"q": "汉朝是哪一年建立的", "expect": [], "tag": "none-far"},
+  {"q": "一年有几个节气", "expect": [], "tag": "none-far"},
+  {"q": "a hot air balloon over fields", "expect": [], "tag": "none-img"},
+  {"q": "一只趴着睡觉的小狗", "expect": [], "tag": "none-img"},
+  {"q": "a bicycle leaning against a wall", "expect": [], "tag": "none-img"},
+  {"q": "城市的夜景", "expect": [], "tag": "none-img"},
+  {"q": "a striped horse on the savanna", "expect": [], "tag": "none-img-elsewhere"},
+  {"q": "一朵很大的黄色向日葵", "expect": [], "tag": "none-img-elsewhere"},
+  {"q": "a folded cookie with a paper message inside", "expect": [], "tag": "none-img-elsewhere"},
+  {"q": "冰晶放大以后的样子", "expect": [], "tag": "none-img-elsewhere"}
+ ]}

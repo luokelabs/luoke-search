@@ -1,0 +1,82 @@
+{
+ "base": "~/DigUpTestbed/zh/office",
+ "queries": [
+  {
+   "q": "幼儿园学费每月多少",
+   "expect": [
+    "家庭开支2026.xlsx"
+   ],
+   "tag": "xlsx"
+  },
+  {
+   "q": "物业费",
+   "expect": [
+    "家庭开支2026.xlsx"
+   ],
+   "tag": "xlsx-word"
+  },
+  {
+   "q": "XJ-2026-0413",
+   "expect": [
+    "家庭开支2026.xlsx"
+   ],
+   "tag": "xlsx-word"
+  },
+  {
+   "q": "家里每个月花了多少钱",
+   "expect": [
+    "家庭开支2026.xlsx"
+   ],
+   "tag": "xlsx"
+  },
+  {
+   "q": "kids school fees",
+   "expect": [
+    "家庭开支2026.xlsx"
+   ],
+   "tag": "en→xlsx"
+  },
+  {
+   "q": "团队版怎么收费",
+   "expect": [
+    "输入法发布会.pptx"
+   ],
+   "tag": "pptx"
+  },
+  {
+   "q": "发布会上讲隐私和离线的那页",
+   "expect": [
+    "输入法发布会.pptx"
+   ],
+   "tag": "pptx"
+  },
+  {
+   "q": "内测用户最喜欢什么",
+   "expect": [
+    "输入法发布会.pptx"
+   ],
+   "tag": "pptx-notes"
+  },
+  {
+   "q": "做龙井茶的客户",
+   "expect": [
+    "客户名单.csv"
+   ],
+   "tag": "csv"
+  },
+  {
+   "q": "青禾茶业",
+   "expect": [
+    "客户名单.csv"
+   ],
+   "tag": "csv-word"
+  },
+  {
+   "q": "需要离线处理合同的律师",
+   "expect": [
+    "客户名单.csv"
+   ],
+   "tag": "csv"
+  }
+ ]
+}
