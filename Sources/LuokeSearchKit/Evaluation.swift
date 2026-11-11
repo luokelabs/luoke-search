@@ -66,7 +66,7 @@ public struct RefusalReport: Encodable, Sendable {
         /// Where the first right answer ranks (nil: not in the results, or no answer to find).
         public let rank: Int?
         public let hits: Int
-        /// Of those, marked strong (at least half the top score).
+        /// Of those, marked strong (`Searcher.isStrong`).
         public let strong: Int
         public let top: String?
         public let score: Double?
@@ -93,7 +93,63 @@ public struct RefusalReport: Encodable, Sendable {
     public var rules: [Rule] = []
 }
 
+/// `luoke-search eval --hits`: every result of every question with what its score is made of, and whether it's one of
+/// the answers, for choosing which weak results not to show. Questions without answers make all their results wrong.
+public struct HitsReport: Encodable, Sendable {
+    public struct Record: Encodable, Sendable {
+        public let q: String
+        public let tag: String?
+        public let answerable: Bool
+        public let hits: [Row]
+    }
+
+    public struct Row: Encodable, Sendable {
+        public let rank: Int
+        public let name: String
+        public let kind: String
+        /// One of the question's answers.
+        public let right: Bool
+        public let score: Double
+        public let z: Double?
+        public let cosine: Double?
+        public let modality: String?
+        public let share: Double
+        /// The share of the words in its name.
+        public let nameShare: Double
+        /// Of a kind the question names ("照片" for a picture).
+        public let named: Bool
+        /// Marked strong (`Hit.strong`).
+        public let strong: Bool
+    }
+
+    public var records: [Record] = []
+}
+
 public enum Evaluation {
+    /// For a cut-off on weak results: every result of every question, as `HitsReport` says.
+    public static func hits(_ sets: [EvalSet], testbed: String?, limit: Int = 10,
+                            search: (String) throws -> SearchAnswer) rethrows -> HitsReport {
+        var report = HitsReport()
+        for set in sets {
+            let base = set.baseFolder(testbed: testbed)
+            for query in set.queries {
+                let answer = try search(query.q)
+                let expected = query.expect.map { Expected($0, base: base) }
+                let named = Query(query.q).kindHints
+                let rows = answer.hits.prefix(limit).enumerated().map { index, hit in
+                    HitsReport.Row(rank: index + 1, name: describe(hit, base: base), kind: hit.kind.rawValue,
+                        right: expected.contains { $0.matches(hit) }, score: hit.score,
+                        z: hit.signals?.z.map(round2), cosine: hit.signals?.cosine.map { ($0 * 1000).rounded() / 1000 },
+                        modality: hit.signals?.modality, share: round2(hit.signals?.share ?? 0),
+                        nameShare: round2(hit.signals?.nameShare ?? 0), named: named.contains(hit.kind),
+                        strong: hit.strong)
+                }
+                report.records.append(.init(q: query.q, tag: query.tag, answerable: !query.expect.isEmpty, hits: rows))
+            }
+        }
+        return report
+    }
+
     /// Runs every query with `search` (the same search the command line and MCP do) and scores the ranks.
     public static func run(_ set: EvalSet, testbed: String?, limit: Int = 10,
                            search: (String) throws -> SearchAnswer) rethrows -> EvalReport {

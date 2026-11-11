@@ -6,15 +6,16 @@
 #
 #   sh scripts/build_app.sh                      ad-hoc signature (development)
 #   SIGN_IDENTITY="Developer ID Application: …" sh scripts/build_app.sh     (or put the identity in .sign-id)
-#   LUOKE_OUT=<folder> sh scripts/build_app.sh   also puts the signed app in <folder> (replacing one there), where
-#                                                luoke-core's release pipeline takes it (tools/internal_build.py, as
-#                                                for luoke-ime's scripts/install.sh); relative to the caller's folder
+#   LUOKE_OUT=<folder> sh scripts/build_app.sh   also puts the signed app in <folder> (replacing one there); relative
+#                                                to the caller's folder. Nothing takes it from there any more.
+#
+# luoke-core's pipeline no longer takes this app: 螺壳.app carries the program scripts/build_helper.sh builds.
 #
 # Notarizing isn't done here: with LUOKE_NOTARIZE set (as the pipeline asks of luoke-ime) it stops rather than leave
 # an ad-hoc build where a notarized one is expected. Signing for a release has to keep Resources/LuokeSearch.entitlements
 # (Apple Events for QuickTime, the Photos library).
 #
-# Opened as an app (by luoke-core at login, with --resident) it runs `serve` on ~/.luoke-search, and takes none of the
+# Opened as an app (with --resident or by hand) it runs `serve` on ~/.luoke-search, and takes none of the
 # development switches (--index, --socket, LUOKE_SEARCH_HOME, LUOKE_HUB_SOCKET, LUOKE_SEARCH_PHOTOS,
 # LUOKE_SEARCH_OPENER…): any process of this user could otherwise point it elsewhere and borrow what macOS lets it
 # read. Only a development build of the app takes them, LUOKE_SEARCH_DEV_APP=1 (never with LUOKE_OUT). For a

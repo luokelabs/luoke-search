@@ -39,7 +39,8 @@ public struct Hit: Codable, Sendable, Equatable {
     /// Why it matches, in a sentence for the user ("第 3 页的文字对得上").
     public var why: String
     public var score: Double
-    /// Scores at least half the top result's.
+    /// Answers the question for sure on its own, not by its place in the list (`Searcher.isStrong`): the query's
+    /// words all in its name, or close in meaning.
     public var strong: Bool
     /// What the score is made of, for measuring a refusal threshold (`luoke-search eval --refusal`); not sent.
     public var signals: Signals? = nil
@@ -53,6 +54,8 @@ public struct Hit: Codable, Sendable, Equatable {
         public var modality: String?
         /// The share of the query's words it holds.
         public var share: Double
+        /// The share of them in its name (a file's name, a photo's title).
+        public var nameShare: Double = 0
     }
 
     enum CodingKeys: String, CodingKey {

@@ -8,20 +8,42 @@ import UniformTypeIdentifiers
 /// (or the Photos library) each time it's asked for; nothing is kept here either.
 extension SearchService {
     static let thumbPrefix = "thumb/"
-    /// The kinds that have one: a picture, a screenshot or a photo itself, a video's frame, a PDF's first page.
+    /// The kinds that have one: a picture, a screenshot or a photo itself, a video's frame, a PDF's page. A table
+    /// (a `doc` that `Rules.isSheet`) has one too: its first rows.
     static let thumbKinds: Set<ItemKind> = [.image, .screenshot, .photo, .video, .pdf]
     /// How long a thumbnail may take (`thumbWait`): within the agent's 10 s for reading a resource.
     static let thumbTimeout: TimeInterval = 2
     /// The video files AVFoundation opens (an .mkv or a .webm is indexed by its name, but has no frame to show).
     static let playable = Set(AVURLAsset.audiovisualTypes().map(\.rawValue))
 
-    /// The thumbnail a result has, by its item (a PDF's is its first page, whichever page the result points at).
-    /// None for SVG (the window doesn't take it, and drawing it is AppKit's, not ImageIO's) or a video file
-    /// AVFoundation can't open.
+    /// The thumbnail a result has: `thumb/<item>`, with the place it points at for a PDF (`-p3`: its page 3) or a
+    /// workbook (`-w2`: its second worksheet); a PDF or table without one is drawn from its first. None for SVG (the
+    /// window doesn't take it, and drawing it is AppKit's, not ImageIO's) or a video file AVFoundation can't open.
     static func thumbID(_ hit: Hit) -> String? {
-        guard thumbKinds.contains(hit.kind), let item = hit.id.split(separator: "#").first else { return nil }
+        guard let item = hit.id.split(separator: "#").first else { return nil }
+        if hit.kind == .doc, let path = hit.path, Rules.isSheet(path) {
+            return thumbPrefix + item + (hit.where?.sheet.map { "-w\($0)" } ?? "")
+        }
+        guard thumbKinds.contains(hit.kind) else { return nil }
         if let path = hit.path, !drawable(path, kind: hit.kind) { return nil }
+        if hit.kind == .pdf, let page = hit.where?.page { return thumbPrefix + item + "-p\(page)" }
         return thumbPrefix + item
+    }
+
+    /// What `thumb/<ref>` names: the item's number, and the page or worksheet (from 1) if it says one. Nil for
+    /// anything else: the ref comes from the agent.
+    static func thumbRef(_ ref: String) -> (item: String, page: Int?, sheet: Int?)? {
+        let parts = ref.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        guard let number = Int64(parts[0]), number > 0, String(number) == parts[0] else { return nil }
+        guard parts.count == 2 else { return (parts[0], nil, nil) }
+        let place = parts[1].dropFirst()
+        guard let tag = parts[1].first, let value = Int(place), (1...99_999).contains(value), String(value) == place
+        else { return nil }
+        switch tag {
+        case "p": return (parts[0], value, nil)
+        case "w": return (parts[0], nil, value)
+        default: return nil
+        }
     }
 
     static func drawable(_ path: String, kind: ItemKind) -> Bool {
@@ -36,9 +58,14 @@ extension SearchService {
     /// knows). What it gives makes the JPEG outside the lock, at most `thumbSlots` at a time: nil when they're all
     /// taken (the window shows its placeholder) or it took more than `thumbWait`. One that took too long keeps its
     /// slot until it ends, so no more threads than that are ever drawing.
-    public func findThumb(_ item: String) -> (() -> Data?)? {
-        guard let number = Int64(item), number > 0, String(number) == item, let target = try? target(item),
-              Self.thumbKinds.contains(target.kind) else { return nil }
+    public func findThumb(_ ref: String) -> (() -> Data?)? {
+        guard let (item, page, sheet) = Self.thumbRef(ref), let found = try? target(item) else { return nil }
+        let isSheet = found.kind == .doc && Rules.isSheet(found.path)
+        // A page for a PDF only, a worksheet for a table only.
+        guard isSheet ? page == nil : Self.thumbKinds.contains(found.kind) && sheet == nil,
+              page == nil || found.kind == .pdf else { return nil }
+        let target = Target(path: found.path, kind: found.kind,
+                            location: page != nil || sheet != nil ? Location(page: page, sheet: sheet) : nil)
         if PhotoPath.id(target.path) == nil {
             var info = stat()
             guard Self.drawable(target.path, kind: target.kind), lstat(target.path, &info) == 0, !isDataless(info)
@@ -77,14 +104,18 @@ enum Thumbs {
             return target.kind == .video ? try frame(photos.video(photo)) : try photos.image(photo, maxPixels: pixels)
         }
         let url = URL(fileURLWithPath: target.path)
+        if target.kind == .doc, Rules.isSheet(target.path) {
+            return SheetPicture.draw(url, sheet: target.location?.sheet ?? 1, pixels: pixels)
+        }
         switch target.kind {
         case .image, .screenshot:
             return try Pictures.image(url, maxPixels: pixels)
         case .pdf:
-            // A locked one would draw blank: the window's placeholder says more.
-            guard let document = PDFDocument(url: url), !document.isLocked, let page = document.page(at: 0) else {
-                return nil
-            }
+            // A locked one would draw blank: the window's placeholder says more. A page it doesn't have (the file
+            // changed since it was read): none either.
+            let number = target.location?.page ?? 1
+            guard let document = PDFDocument(url: url), !document.isLocked, number >= 1, number <= document.pageCount,
+                  let page = document.page(at: number - 1) else { return nil }
             // `render` takes a width: an upright page drawn `pixels` wide would only be shrunk again.
             let box = page.bounds(for: .mediaBox)
             let (width, height) = page.rotation % 180 != 0 ? (box.height, box.width) : (box.width, box.height)

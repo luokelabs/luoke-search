@@ -12,8 +12,12 @@ let usage = """
       luoke-search index <文件夹>... [--exclude 文件夹]... [--prune] [--wait] [--no-vectors] [--allow-battery] [--json]
       luoke-search search <问题> [--kind 类型]... [-n 10] [--since 日期] [--until 日期] [--json]
       luoke-search status [--json]
-      luoke-search eval <题库.json>... [--testbed 文件夹] [-n 10] [--refusal] [--scoring a|b|d|c<k>] [--timing] [--json]
+      luoke-search eval <题库.json>... [--testbed 文件夹] [-n 10] [--refusal | --hits] [--scoring a|b|d|c<k>]
+                        [--no-cutoff] [--timing] [--json]
                                             --refusal：量拒答门槛（题库里 expect 为空的是"没有答案"的题）
+                                            --hits：每题每条结果的分数、z、余弦、字词占比和对错（JSON）
+                                            --no-cutoff：用 11-09 以前的门槛（问照片时 z ≥ 1、没有余弦门槛、
+                                                         不去掉不到第一名一半的），只供对比
                                             --scoring：按意思打分的做法，只供对比
                                             --timing：每题搜索的用时（p50 / p90 / 最长，打在 stderr）
       luoke-search open <结果编号> [--reveal]
@@ -84,11 +88,12 @@ func index(_ arguments: Arguments) throws {
     let watchdog = ReadWatchdog(directory: directory)
     watchdog.start()
     indexer.watchdog = watchdog
+    if arguments.positional.isEmpty { indexer.readFirst = Indexer.usualFirst() }
     try indexer.noteStopped(directory)
     let json = arguments.json
     var report = try indexer.sync(folders)
     if arguments.flags.contains("--prune") || arguments.positional.isEmpty {
-        report.removed += try indexer.prune(keeping: folders)
+        report.removed += try indexer.prune(keeping: arguments.positional.isEmpty ? settings.keptRoots(restricted: arguments.shipped) : folders)
     }
     if !json {
         print("同步：新 \(report.added)，改过 \(report.changed)，移动 \(report.moved)，删掉 \(report.removed)，没变 \(report.unchanged)")
@@ -187,7 +192,7 @@ func search(_ arguments: Arguments) throws {
         print(line)
         if let path = hit.path { print("   \(path)") }
         if let snippet = hit.snippet { print("   \(snippet)") }
-        print("   \(hit.why)" + (hit.score > 0 ? " · 分数 \(hit.score)\(hit.strong ? "" : "（较弱）")" : ""))
+        print("   \(hit.why)" + (hit.score > 0 ? " · 分数 \(hit.score)\(hit.strong ? "" : "（可能相关）")" : ""))
     }
     print("（\(answer.tookMs) ms\(answer.partialReason.map { "；\($0)" } ?? "")）")
 }
@@ -261,10 +266,11 @@ func status(_ arguments: Arguments) throws {
 }
 
 func eval(_ arguments: Arguments) throws {
-    try arguments.only(["--index", "--testbed", "-n", "--json", "--refusal", "--scoring", "--timing"])
+    try arguments.only(["--index", "--testbed", "-n", "--json", "--refusal", "--hits", "--scoring", "--timing", "--no-cutoff"])
     guard !arguments.positional.isEmpty else { throw Failure("要给题库文件") }
     let directory = try arguments.dataDirectory()
     let searcher = Searcher(store: try IndexStore(directory: directory))
+    searcher.cutsWeakHits = !arguments.flags.contains("--no-cutoff")
     if let text = arguments.value("--scoring") {
         guard let scale = MeaningScale(text) else { throw Failure("--scoring 是 a、b、d 或 c 加一个数（如 c20）") }
         searcher.meaningScale = scale
@@ -273,6 +279,13 @@ func eval(_ arguments: Arguments) throws {
     let limit = try arguments.count("-n", default: 10)
     let testbed = arguments.value("--testbed").map(absolute)
         ?? ProcessInfo.processInfo.environment["LUOKE_SEARCH_TESTBED"]
+    if arguments.flags.contains("--hits") {
+        guard !arguments.flags.contains("--refusal") else { throw Failure("--hits 和 --refusal 只能用一个") }
+        let sets = try arguments.positional.map { try EvalSet.load(URL(fileURLWithPath: absolute($0))) }
+        return try printJSON(try Evaluation.hits(sets, testbed: testbed, limit: limit) { query in
+            try runSearch(query, searcher: searcher, hub: hub, options: SearchOptions(limit: limit))
+        })
+    }
     if arguments.flags.contains("--refusal") {
         let sets = try arguments.positional.map { try EvalSet.load(URL(fileURLWithPath: absolute($0))) }
         let report = try Evaluation.refusal(sets, testbed: testbed, limit: limit) { query in
@@ -364,9 +377,9 @@ func mcp(_ arguments: Arguments) throws {
 }
 
 /// luoke-search in the background: the agent's socket (agent tool protocol §2) and the resident loop that keeps the
-/// index in step with the folders (`Resident`), until SIGTERM or SIGINT. `--resident`: opened by luoke-core at login
-/// (V1 §8): it says it wants that again, and says it's leaving when it quits. `--no-watch`: the socket only.
-/// `--parent-pid`: started as a child by 螺壳.app: it ends with that process, however that one went, as on SIGTERM.
+/// index in step with the folders (`Resident`), until SIGTERM or SIGINT. `--resident`: started by 螺壳 (as a child of
+/// 螺壳.app, with `--parent-pid`): it tells luoke-core it wants to keep running, and that it's leaving when it quits.
+/// `--no-watch`: the socket only. `--parent-pid`: it ends with that process, however that one went, as on SIGTERM.
 /// Left running, the next 螺壳 would find this one holding the socket and its own copy couldn't start.
 func serve(_ arguments: Arguments) throws {
     if !asApp { try arguments.only(["--index", "--socket", "--no-watch", "--resident", "--parent-pid"]) }
@@ -408,6 +421,14 @@ func serve(_ arguments: Arguments) throws {
     service.judgesAccess = true   // the app's own access, not a terminal's
     service.releaseVectorsWhenIdle(after: 600)
     let server = AgentTools.server(service)
+    if arguments.shipped {
+        // Only the agent core, with the token 螺壳 gave it, gets answers (FromApp.token); none given: no one does.
+        server.needsToken = true
+        server.token = FromApp.token
+        if FromApp.token == nil {
+            FileHandle.standardError.write(Data("luoke-search: 螺壳没给口令，工具 socket 上的请求一律拒\n".utf8))
+        }
+    }
     let given = arguments.value("--socket").map(absolute)
     let socket = AgentSocket(path: given ?? directory.agentSocket.path, server: server)
     try socket.start()
@@ -561,6 +582,11 @@ do {
             FileHandle.standardError.write(Data("luoke-search: 发布版不认开发用的 \(dropped.joined(separator: "、"))，已忽略\n".utf8))
         }
         arguments.shipped = true
+        // Everything but status and help reads under 螺壳's Full Disk Access or changes something: only 螺壳 starts it.
+        if !FromApp.free.contains(command ?? "help"), let why = FromApp.check() {
+            FileHandle.standardError.write(Data("luoke-search: 螺壳搜索：\(why)。\n装好的螺壳搜索只由螺壳起，请在螺壳里用；终端里能看的是 status。\n".utf8))
+            exit(FromApp.refusedExitCode)
+        }
     }
     switch command {
     case "index": try index(arguments)

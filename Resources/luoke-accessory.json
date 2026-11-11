@@ -3,7 +3,7 @@
  "accessory": "luoke-search",
  "bundle_id": "ai.luoke.search",
  "name": "螺壳搜索",
- "version": "0.1.14",
+ "version": "0.1.21",
  "type": "app",
  "entry": [],
  "resident": true,
@@ -21,7 +21,7 @@
    {"kind": "index-ready", "title": "第一遍索引建好了", "urgency": "low"}
   ],
   "actions": [
-   {"name": "search_settings_apply", "title": "改螺壳搜索的设置（搜哪些文件夹、要不要照片图库）", "writes": true},
+   {"name": "search_settings_apply", "title": "改螺壳搜索的设置（搜哪些地方、跳过哪些、要不要外接盘和照片图库）", "writes": true},
    {"name": "search_open", "title": "在 Mac 上打开搜到的文件，或在访达中显示", "writes": true}
   ],
   "service": {"summary": true, "pages": [{"id": "overview", "title": "概览"}], "ask": {"search": "search_query"}},
@@ -29,8 +29,8 @@
    {"id": "photos", "kind": "system", "owner": "luoke", "tcc": "Photos", "title": "照片图库",
     "facts": ["仅在开启照片搜索时读取", "只读，不修改图库", "不从 iCloud 下载", "数据不离开本机"],
     "without": "degrade"},
-      {"id": "folders", "kind": "each-time", "title": "读你选的文件夹",
-       "facts": ["仅读取你选择的文件夹", "首次读取时由 macOS 询问", "数据不离开本机"]},
+      {"id": "folders", "kind": "each-time", "title": "读你的个人文件夹和 iCloud 云盘",
+       "facts": ["默认读个人文件夹和 iCloud 云盘，可以去掉", "外接盘要你点了才读", "首次读取时由 macOS 询问", "数据不离开本机"]},
       {"id": "quicktime", "kind": "each-time", "title": "让 QuickTime Player 跳到视频的那一秒",
        "facts": ["仅在播放视频片段时使用", "首次使用时由 macOS 询问"]}
   ],

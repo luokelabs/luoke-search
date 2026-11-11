@@ -108,13 +108,13 @@ struct ReleaseReviewSwitchTests {
         let (home, saidHome) = try Self.resident([], environment: ["LUOKE_SEARCH_HOME": scratch.path + "/from-env",
                                                                    "CFFIXED_USER_HOME": scratch.path + "/fake-home"], in: scratch)
         #expect(home == 1 && saidHome.contains("LUOKE_SEARCH_HOME、CFFIXED_USER_HOME"), "\(saidHome)")
-        // The others are dropped; then, not being the app, it has no data directory of its own and stops (the
-        // development rule) before opening any.
+        // The others are dropped; then, not started by 螺壳 (no channel on descriptor 3, `FromApp`), it stops before
+        // opening any data directory.
         let (rest, saidRest) = try Self.resident([], environment: ["LUOKE_HUB_SOCKET": scratch.path + "/hub.sock",
                                                                    "LUOKE_SEARCH_OPENER": "dry"], in: scratch)
-        #expect(rest == 1, "\(saidRest)")
+        #expect(rest == FromApp.refusedExitCode, "\(saidRest)")
         #expect(saidRest.contains("发布版不认开发用的 LUOKE_HUB_SOCKET、LUOKE_SEARCH_OPENER，已忽略"), "\(saidRest)")
-        #expect(saidRest.contains("开发版要给 --index"), "\(saidRest)")
+        #expect(saidRest.contains("不是螺壳起的"), "\(saidRest)")
         // luoke-core's jobs set LUOKE_HUB_SOCKET to its own socket: nothing to say about that one.
         let (_, saidHub) = try Self.resident([], environment: ["LUOKE_HUB_SOCKET": Hub.installedSocket], in: scratch)
         #expect(!saidHub.contains("LUOKE_HUB_SOCKET"), "\(saidHub)")

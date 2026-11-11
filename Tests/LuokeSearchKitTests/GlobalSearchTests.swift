@@ -92,7 +92,10 @@ extension ReadsPictures {
             let first = try #require(try Self.hits(found).first)
             #expect(first["title"] as? String == "租赁合同摘要.md")
             #expect(first["source"] as? String == "files")
-            #expect(first["kind"] as? String == "doc" && first["strong"] as? Bool == true)
+            // 「押金」 is only in the text, and there are no vectors here: found, not sure.
+            #expect(first["kind"] as? String == "doc" && first["strong"] as? Bool == false)
+            let named = try #require(try Self.hits(agent.call("search_query", ["query": "租赁合同"])).first)
+            #expect(named["title"] as? String == "租赁合同摘要.md" && named["strong"] as? Bool == true)
             #expect(first["kind_label"] as? String == "文档")
             #expect(first["thumb"] == nil)   // a document has no picture
             // Ours as it was, for the agent's model; the card still comes as the fallback.
@@ -418,7 +421,7 @@ extension ReadsPictures {
         static func ask(_ server: MCPServer, _ uri: String, within: TimeInterval) -> (answered: Bool, blob: Bool) {
             final class Box: @unchecked Sendable { var blob = false }
             let box = Box(), done = DispatchSemaphore(value: 0)
-            DispatchQueue.global().async {
+            onAnotherThread {
                 let answer = server.handle(["jsonrpc": "2.0", "id": 1, "method": "resources/read",
                                             "params": ["uri": uri]])
                 box.blob = ((answer?["result"] as? [String: Any])?["contents"] as? [[String: Any]])?.first?["blob"] != nil
@@ -441,8 +444,10 @@ extension ReadsPictures {
             final class Count: @unchecked Sendable { var blobs = 0; let lock = NSLock() }
             let count = Count()
             for _ in 0..<2 {
-                DispatchQueue.global().async(group: drawing) {
+                drawing.enter()
+                onAnotherThread {
                     if Self.ask(server, uri, within: 60).blob { count.lock.withLock { count.blobs += 1 } }
+                    drawing.leave()
                 }
                 #expect(photos.started.wait(timeout: .now() + 5) == .success)
             }

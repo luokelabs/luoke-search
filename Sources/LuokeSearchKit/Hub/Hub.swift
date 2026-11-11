@@ -4,7 +4,7 @@ import Security
 public enum LuokeSearch {
     /// The accessory id (luoke-core V1 §8) and the version sent with every request to the hub.
     public static let accessory = "luoke-search"
-    public static let version = "0.1.14"
+    public static let version = "0.1.21"
     public static let bundleID = "ai.luoke.search"
 
     /// Whether this process runs 螺壳搜索.app's code: its bundle says so, or — run through a link placed outside
@@ -208,7 +208,8 @@ public final class Hub: @unchecked Sendable {
         return (state, background["reasons"] as? [String] ?? [])
     }
 
-    /// Asks luoke-core to open luoke-search at login (V1 §8: accessories don't register login items of their own).
+    /// Tells luoke-core whether this accessory wants to keep running (V1 §8). luoke-core keeps the last declaration, and
+    /// 螺壳 reads it to decide whether to start the program inside 螺壳.app as a child.
     public func declareResident(_ resident: Bool) throws {
         let body = try JSONSerialization.data(withJSONObject: ["resident": resident])
         try check(try send("PUT", "/accessory/resident", body: body, extra: headers, timeout: 10))

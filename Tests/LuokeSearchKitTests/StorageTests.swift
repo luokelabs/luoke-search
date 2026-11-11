@@ -65,7 +65,7 @@ struct TwoWritersTests {
         let first = Handed(try Database(path: path)), second = try Database(path: path)
         try first.value.execute("CREATE TABLE t(v INTEGER)")
         let holding = DispatchSemaphore(value: 0), done = DispatchSemaphore(value: 0)
-        DispatchQueue.global().async {
+        onAnotherThread {
             try? first.value.transaction {
                 try first.value.execute("INSERT INTO t VALUES(1)")
                 holding.signal()
@@ -118,7 +118,8 @@ struct TwoWritersTests {
         }
         try #require(sqlite3_exec(other.value, "CREATE TABLE t(v INTEGER); BEGIN EXCLUSIVE; INSERT INTO t VALUES(1);",
                                   nil, nil, nil) == SQLITE_OK)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) {
+        onAnotherThread {
+            Thread.sleep(forTimeInterval: 0.4)
             sqlite3_exec(other.value, "COMMIT", nil, nil, nil)
             committed.signal()
         }

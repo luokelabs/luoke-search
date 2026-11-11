@@ -117,8 +117,11 @@ final class FakePhotos: PhotoSource, @unchecked Sendable {
                 return (watchers[index].changed, changes)
             }
         }
-        DispatchQueue.global().async { for (watcher, changes) in deliveries { watcher(details ? changes : nil) } }
+        // On a queue of its own, one change after another, as PhotoKit tells its observers (not the shared global
+        // queue, which can wait many seconds to start while the whole suite runs: see `onAnotherThread`).
+        changesQueue.async { for (watcher, changes) in deliveries { watcher(details ? changes : nil) } }
     }
+    private let changesQueue = DispatchQueue(label: "FakePhotos.changes")
 
 }
 

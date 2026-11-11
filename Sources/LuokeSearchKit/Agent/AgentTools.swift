@@ -17,7 +17,7 @@ public enum AgentTools {
             ["kind": "index-ready", "title": "第一遍索引建好了", "urgency": "low"],
         ],
         "actions": [
-            ["name": "search_settings_apply", "title": "改螺壳搜索的设置（搜哪些文件夹、要不要照片图库）", "writes": true],
+            ["name": "search_settings_apply", "title": "改螺壳搜索的设置（搜哪些地方、跳过哪些、要不要外接盘和照片图库）", "writes": true],
             ["name": "search_open", "title": "在 Mac 上打开搜到的文件，或在访达中显示", "writes": true],
         ],
         "service": ["summary": true, "pages": [["id": SearchService.overviewPage, "title": "概览"]],
@@ -27,15 +27,16 @@ public enum AgentTools {
              "facts": ["仅在开启照片搜索时读取", "只读，不修改图库", "不从 iCloud 下载",
                        "数据不离开本机"],
              "without": "degrade"],
-            ["id": "folders", "kind": "each-time", "title": "读你选的文件夹",
-             "facts": ["仅读取你选择的文件夹", "首次读取时由 macOS 询问", "数据不离开本机"]],
+            ["id": "folders", "kind": "each-time", "title": "读你的个人文件夹和 iCloud 云盘",
+             "facts": ["默认读个人文件夹和 iCloud 云盘，可以去掉", "外接盘要你点了才读", "首次读取时由 macOS 询问", "数据不离开本机"]],
             ["id": "quicktime", "kind": "each-time", "title": "让 QuickTime Player 跳到视频的那一秒",
              "facts": ["仅在播放视频片段时使用", "首次使用时由 macOS 询问"]],
         ],
         "listing": ["tagline": "在这台 Mac 上找文件和照片，答案带出处", "category": "效率"],
     ] }
 
-    static let kinds = ItemKind.allCases.map(\.rawValue)
+    /// `sheet` is the window's kind for spreadsheets (`windowHit`); the index files them under `doc`, so it filters as `doc`.
+    static let kinds = ItemKind.allCases.map(\.rawValue) + [sheetKind]
 
     /// The window's filter by where results are from; a video file is a file, a video in the library is `photos`.
     static var sourcesSchema: [String: Any] { [
@@ -60,13 +61,13 @@ public enum AgentTools {
                 只给时间（或只给类型、来源）不给 query，列出最新的。\
                 答复里每条结果有出处（第几页、第几秒）和片段；片段和标题里的密码、验证码、密钥遮成〔密码〕这样，\
                 卡号、证件号只留后 4 位（〔卡号 ****1111〕）；\
-                strong 为假的是可能相关、不一定是答案；confident 为 false 表示没找到，为 null 表示有结果但还说不准；\
+                strong 为真表示这条本身就很对得上（名字里有要找的字，或意思很近），不看它排第几；为假的是可能相关、不一定是答案；confident 为 false 表示没找到，为 null 表示有结果但还说不准；\
                 skipped 列出这次没搜或没搜全的地方（照片还没允许、拒绝过、没开搜照片图库）；\
                 totals 是各来源一共对上几条（files、photos，不受 limit 和 sources 限制）。
                 """,
             schema: ["type": "object", "properties": [
                 "query": ["type": "string", "description": "用户的原话，或改写过的；只按时间或类型列出时可以不带"],
-                "kinds": ["type": "array", "items": ["type": "string", "enum": kinds], "description": "只要这几类（筛选）"],
+                "kinds": ["type": "array", "items": ["type": "string", "enum": kinds], "description": "只要这几类（筛选）；sheet（表格：xlsx、csv、tsv）算在 doc 里，筛的是全部 doc"],
                 "sources": sourcesSchema,
                 "since": ["type": "string", "description": "ISO 8601 日期或时间：条目的时间不早于它（拍摄时间，没有就按修改时间）"],
                 "until": ["type": "string", "description": "ISO 8601 日期或时间：不晚于它"],
@@ -78,7 +79,7 @@ public enum AgentTools {
                 let query = given as? String ?? ""
                 var options = SearchOptions(limit: min(max((arguments["limit"] as? Int) ?? 10, 1), 50))
                 if let kinds = arguments["kinds"] as? [String] {
-                    let parsed = kinds.compactMap(ItemKind.init(rawValue:))
+                    let parsed = kinds.compactMap { ItemKind(rawValue: $0 == sheetKind ? ItemKind.doc.rawValue : $0) }
                     if !parsed.isEmpty { options.kinds = Set(parsed) }
                 }
                 options.sources = sources(arguments)
@@ -90,17 +91,20 @@ public enum AgentTools {
                 }
                 let answer = try service.search(query, options: options)
                 var structured = try json(answer)
-                let similar = try service.withVectors(answer.hits)
-                structured["hits"] = try answer.hits.map { try windowHit($0, similar: similar) }
-                structured["card"] = Cards.results(answer, query: query,
+                structured["hits"] = try answer.hits.map { try windowHit($0) }
+                // Nothing found: which folders were looked in, on the card and for the model (it may offer to add one).
+                let searched = answer.hits.isEmpty ? service.searchedNote(sources: options.sources) : nil
+                structured["card"] = Cards.results(answer, query: query, searched: searched,
                                                    surfaceID: "q-" + UUID().uuidString.prefix(8).lowercased())
                 // What wasn't looked in (the window's row under the results): an empty list, not missing.
                 let skipped = service.skippedSources(kinds: options.kinds, sources: options.sources)
                 structured["skipped"] = skipped
-                return (summary(answer) + SearchService.skippedSentence(skipped), structured)
+                return (summary(answer) + (searched.map { "\n（\($0)）" } ?? "") + SearchService.skippedSentence(skipped),
+                        structured)
             })
 
-        // A result's 「找相似的」 (§1b): read-only, its new results drawn in place. Only vectors already in the index.
+        // What else is like a result: read-only, only vectors already in the index. Not a button on the window's hits:
+        // a hit's button answers in one sentence (agent tool protocol §1b), and this one answers with new results.
         server.add(MCPServer.Tool(
             name: "search_similar", title: "找和一条结果相似的",
             description: """
@@ -120,8 +124,7 @@ public enum AgentTools {
                     throw ToolFailure("stale", "这条结果已经不在索引里了。")
                 }
                 var structured = try json(answer)
-                let similar = try service.withVectors(answer.hits)
-                structured["hits"] = try answer.hits.map { try windowHit($0, similar: similar) }
+                structured["hits"] = try answer.hits.map { try windowHit($0) }
                 structured["card"] = Cards.results(answer, query: "",
                                                    surfaceID: "q-" + UUID().uuidString.prefix(8).lowercased())
                 // The same shape as a search's: the window redraws its list, the row under it included.
@@ -157,31 +160,39 @@ public enum AgentTools {
         server.add(MCPServer.Tool(
             name: "search_settings", title: "看或提议改螺壳搜索的设置",
             description: """
-                不带 change：答复现在的设置（搜哪些文件夹、跳过哪些、要不要照片图库、用电池时建不建索引：默认不建，\
-                连着螺壳时听螺壳的电池设置）。带 change：\
+                不带 change：答复现在的设置（搜哪些地方、跳过哪些、要不要照片图库、用电池时建不建索引：默认不建，\
+                连着螺壳时听螺壳的电池设置）。默认搜整个个人文件夹和 iCloud 云盘。带 change：\
                 出一个方案和一张确认卡片，用户在卡片上点了"好"才会改（search_settings_apply）。文件夹可以写路径，\
-                也可以写 desktop、documents、downloads、pictures、movies。
+                也可以写 home（个人文件夹）、icloud（iCloud 云盘）、desktop、documents、downloads、pictures、movies、music。\
+                不想搜个人文件夹里的某个文件夹，用 skip_folders；跳过的再搜，用 unskip_folders。\
+                外接盘要用户在螺壳搜索的页面上点「也搜这块盘」；不搜了可以写在 remove_folders 里（写盘的路径）。
                 """,
             schema: ["type": "object", "properties": [
                 "change": ["type": "object", "properties": [
                     "add_folders": ["type": "array", "items": ["type": "string"]],
                     "remove_folders": ["type": "array", "items": ["type": "string"]],
                     "skip_folders": ["type": "array", "items": ["type": "string"]],
+                    "unskip_folders": ["type": "array", "items": ["type": "string"]],
                     "photos": ["type": "boolean"],
                     "on_battery": ["type": "boolean"],
                 ] as [String: Any]],
             ] as [String: Any]]) { arguments, _ in
                 let settings = Settings.load(service.directory)
                 guard let raw = arguments["change"] as? [String: Any] else {
+                    // By the names the user knows, without asking Finder (it may look inside a protected folder).
                     let folders = settings.searched(restricted: service.restrictFolders, home: service.home)
-                        .map(service.display).joined(separator: "、")
-                    return ("现在搜\(folders.isEmpty ? "的文件夹还没选" : "：\(folders)")；照片图库\(settings.photos ? "开着" : "没开")。",
+                        .map(service.quietName).joined(separator: "、")
+                    let skipped = settings.skipFolders.map(service.quietName).joined(separator: "、")
+                    return ("现在搜\(folders.isEmpty ? "的文件夹还没选" : "：\(folders)")"
+                            + (skipped.isEmpty ? "" : "；跳过：\(skipped)")
+                            + "；照片图库\(settings.photos ? "开着" : "没开")。",
                             ["settings": try json(settings)])
                 }
                 var change = SearchService.Change()
                 change.addFolders = raw["add_folders"] as? [String] ?? []
                 change.removeFolders = raw["remove_folders"] as? [String] ?? []
                 change.skipFolders = raw["skip_folders"] as? [String] ?? []
+                change.unskipFolders = raw["unskip_folders"] as? [String] ?? []
                 change.photos = raw["photos"] as? Bool
                 change.onBattery = raw["on_battery"] as? Bool
                 let (plan, lines) = try service.plan(change)
@@ -194,17 +205,45 @@ public enum AgentTools {
         server.add(MCPServer.Tool(
             name: "search_settings_apply", title: "改螺壳搜索的设置",
             description: "执行 search_settings 出的方案（或 outbox 里\"还没选要搜的地方\"那张卡片上的）。只在用户在卡片上点了以后调。"
-                + "不带 plan_id、带 photos：螺壳搜索页面上的开关，只在用户在页面上点了以后调。",
+                + "不带 plan_id、带 photos、folder、skip、unskip 或 disk：螺壳搜索页面上的开关、「不搜了」「跳过」「不跳过了」「也搜这块盘」，只在用户在页面上点了以后调；"
+                + "用户在对话里要改设置，用 search_settings。",
             schema: ["type": "object", "properties": [
                 "plan_id": ["type": "string"],
                 "photos": ["type": "boolean", "description": "页面上的开关：搜不搜照片图库"],
+                "folder": ["type": "string", "description": "页面上的「不搜了」：按钮带的文件夹编号"],
+                "skip": ["type": "string", "description": "页面上的「跳过」：按钮带的文件夹编号"],
+                "unskip": ["type": "string", "description": "页面上的「不跳过了」：按钮带的文件夹编号"],
+                "disk": ["type": "string", "description": "页面上的「也搜这块盘」：按钮带的盘的编号"],
                 "checks": ["type": "object", "additionalProperties": ["type": "boolean"],
                            "description": "卡片上勾选框的值（只有带勾选框的方案才有）"],
             ] as [String: Any]],
             readOnly: false) { arguments, meta in
+                let taps = ["photos", "folder", "skip", "unskip", "disk"].filter { arguments[$0] != nil }
+                if arguments["plan_id"] == nil, taps.count > 1 {
+                    throw ToolFailure("invalid", "页面上一次只点一个。")
+                }
+                for key in ["skip", "unskip", "disk"] where arguments["plan_id"] == nil && arguments[key] != nil {
+                    guard let id = arguments[key] as? String, !id.isEmpty, id.utf8.count <= 64 else {
+                        throw ToolFailure("invalid", "页面上点的是哪一个？")
+                    }
+                    let surface = (meta[MCPServer.userAction] as? [String: Any])?["surfaceId"] as? String
+                    let text = switch key {
+                    case "skip": try service.skipFolder(id, surfaceID: surface)
+                    case "unskip": try service.unskipFolder(id, surfaceID: surface)
+                    default: try service.searchDisk(id, surfaceID: surface)
+                    }
+                    return (text, ["done": true])
+                }
                 if arguments["plan_id"] == nil, let on = arguments["photos"] as? Bool {
                     let surface = (meta[MCPServer.userAction] as? [String: Any])?["surfaceId"] as? String
                     return (try service.flipPhotos(on, surfaceID: surface), ["done": true])
+                }
+                if arguments["plan_id"] == nil, let given = arguments["folder"] {
+                    guard let folder = given as? String, !folder.isEmpty, folder.utf8.count <= 64 else {
+                        throw ToolFailure("invalid", "要不搜哪个文件夹？")
+                    }
+                    let surface = (meta[MCPServer.userAction] as? [String: Any])?["surfaceId"] as? String
+                    return (try service.stopSearching(folder, surfaceID: surface), ["done": true])
                 }
                 guard let planID = arguments["plan_id"] as? String else { throw ToolFailure("invalid", "缺少方案编号") }
                 var ticks: [String: Bool] = [:]
@@ -257,25 +296,28 @@ public enum AgentTools {
         return server
     }
 
+    /// The window's kind for a table (`Rules.isSheet`): not one of `ItemKind`, so not a filter of `search_query`.
+    static let sheetKind = "sheet"
+
     /// One result as the window's list draws it (§1b): ours as it was, plus which part of luoke-search it's from (the
     /// window's filter), its kind as the user calls it, a line of where in it, its thumbnail if it has one, and its
-    /// buttons (the card's, and
-    /// 「找相似的」 when its item is among `similar`: it has vectors to go on).
-    static func windowHit(_ hit: Hit, similar: Set<Int64> = []) throws -> [String: Any] {
+    /// buttons: opening it and showing it in Finder only. A hit's button answers in one sentence (agent tool protocol
+    /// §1b), so 「找相似的」, which answers with new results, isn't one.
+    static func windowHit(_ hit: Hit) throws -> [String: Any] {
         var shaped = try json(hit)
         shaped["source"] = hit.path == nil ? "photos" : "files"
         // What kind it is, as the user calls it ("截图"): the window can't tell from `kind`, and shows it where the
-        // name doesn't say.
+        // name doesn't say. A table is a document to the index, and its own kind to the window (「表格」).
         shaped["kind_label"] = hit.kind.label
+        if hit.kind == .doc, let path = hit.path, Rules.isSheet(path) {
+            shaped["kind"] = sheetKind
+            shaped["kind_label"] = "表格"
+        }
         if let line = hit.where.flatMap(Cards.place) { shaped["line"] = line }
         if let thumb = SearchService.thumbID(hit) { shaped["thumb"] = thumb }
-        var actions: [[String: Any]] = Cards.openings(hit).enumerated().map { index, opening in
+        shaped["actions"] = Cards.openings(hit).enumerated().map { index, opening in
             ["name": "search_open", "title": opening.label, "args": opening.args, "primary": index == 0]
         }
-        if let item = Int64(hit.id.split(separator: "#").first ?? ""), similar.contains(item) {
-            actions.append(["name": "search_similar", "title": "找相似的", "args": ["id": hit.id]])
-        }
-        shaped["actions"] = actions
         return shaped
     }
 

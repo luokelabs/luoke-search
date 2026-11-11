@@ -90,7 +90,12 @@ final class FolderWatcher: @unchecked Sendable {
     }
 
     func root(of path: String) -> String? {
-        lock.withLock { roots.first { path == $0 || path.hasPrefix($0 + "/") } }
+        lock.withLock { Self.innermost(path, roots) }
+    }
+
+    /// The root a path belongs to: the innermost one holding it (iCloud Drive's, not the home folder's).
+    static func innermost(_ path: String, _ roots: [String]) -> String? {
+        roots.filter { path == $0 || path.hasPrefix($0 + "/") }.max { $0.count < $1.count }
     }
 
     /// On `events`.
@@ -98,7 +103,7 @@ final class FolderWatcher: @unchecked Sendable {
         let (added, waited) = lock.withLock { () -> (Bool, TimeInterval) in
             var any = false
             for path in paths {
-                guard let root = roots.first(where: { path == $0 || path.hasPrefix($0 + "/") }) else { continue }
+                guard let root = Self.innermost(path, roots) else { continue }
                 if path.dropFirst(root.count).split(separator: "/").contains(where: { $0.hasPrefix(".") }) { continue }
                 if _ignoring(path) { continue }
                 pending.insert(path)

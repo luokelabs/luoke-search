@@ -52,6 +52,29 @@ public final class IndexStore {
         db = try Database(path: file.path)
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         try migrate()
+        try decodeNames()
+    }
+
+    /// The meta key noting that name segments written before names kept percent-encoded went in decoded too
+    /// (#113) were written again.
+    static let namesDecoded = "names_decoded"
+
+    /// Name segments of files whose path holds a "%", written again once (`writeName` now adds what `Names.display`
+    /// makes of the name and the folders). Noted in meta, not a new schema: an earlier version still opens this index,
+    /// and writes the names it adds as before.
+    private func decodeNames() throws {
+        let noted = "SELECT count(*) FROM meta WHERE key = ?"
+        guard try db.scalarInt(noted, [.text(Self.namesDecoded)]) == 0 else { return }
+        try db.transaction {
+            // Read again inside the write lock: another process may have done it while this one waited.
+            guard try db.scalarInt(noted, [.text(Self.namesDecoded)]) == 0 else { return }
+            var items: [(id: Int64, path: String)] = []
+            try db.query("SELECT id, path FROM items WHERE source = 'file' AND instr(path, '%') > 0") { row in
+                items.append((row.int(0), row.text(1) ?? ""))
+            }
+            for item in items { try rewriteName(item.id, path: item.path) }
+            try db.query("INSERT INTO meta(key, value) VALUES(?, '1')", [.text(Self.namesDecoded)])
+        }
     }
 
     private func migrate() throws {
@@ -278,13 +301,18 @@ public final class IndexStore {
     public func moved(_ id: Int64, to path: String) throws {
         try db.transaction {
             try db.query("UPDATE items SET path = ? WHERE id = ?", [.text(path), .int(id)])
-            try db.query("DELETE FROM fts WHERE rowid IN (SELECT id FROM segments WHERE item = ? AND kind = 'name')",
-                         [.int(id)])
-            try db.query("DELETE FROM fts_tri WHERE rowid IN (SELECT id FROM segments WHERE item = ? AND kind = 'name')",
-                         [.int(id)])
-            try db.query("DELETE FROM segments WHERE item = ? AND kind = 'name'", [.int(id)])
-            try writeName(item: id, path: path)
+            try rewriteName(id, path: path)
         }
+    }
+
+    /// An item's name segment written again for `path`. Inside the caller's transaction.
+    private func rewriteName(_ id: Int64, path: String) throws {
+        try db.query("DELETE FROM fts WHERE rowid IN (SELECT id FROM segments WHERE item = ? AND kind = 'name')",
+                     [.int(id)])
+        try db.query("DELETE FROM fts_tri WHERE rowid IN (SELECT id FROM segments WHERE item = ? AND kind = 'name')",
+                     [.int(id)])
+        try db.query("DELETE FROM segments WHERE item = ? AND kind = 'name'", [.int(id)])
+        try writeName(item: id, path: path)
     }
 
     public func remove(_ id: Int64) throws {
@@ -369,15 +397,30 @@ public final class IndexStore {
     /// changed, ahead of a first pass's backlog).
     /// `photos`: include items from the Photos library (only when there's a library to read them from).
     /// Those set aside while their files aren't on this Mac (`setAside`) aren't among them.
-    public func pending(limit: Int, latestFirst: Bool = false, photos: Bool = true) throws -> [ItemRecord] {
+    /// `first`: files in these folders, or changed since then, before all the rest (`Indexer.readFirst`).
+    public func pending(limit: Int, latestFirst: Bool = false, photos: Bool = true,
+                        first: Indexer.ReadFirst = .init()) throws -> [ItemRecord] {
         var out: [ItemRecord] = []
+        // Compared as text, not LIKE: a folder's name may hold % or _.
+        var early: [String] = first.folders.map { _ in "substr(path, 1, ?) = ?" }
+        var values: [SQLValue] = [.text(Self.notHere)]
+        for folder in first.folders {
+            let prefix = folder.hasSuffix("/") ? folder : folder + "/"
+            values += [.int(Int64(prefix.unicodeScalars.count)), .text(prefix)]
+        }
+        if let since = first.since {
+            early.append("mtime >= ?")
+            values.append(.double(since))
+        }
+        let firstOrder = early.isEmpty ? "" : "(" + early.joined(separator: " OR ") + ") DESC, "
+        values.append(.int(Int64(limit)))
         try db.query("""
             SELECT \(Self.itemColumns) FROM items
             WHERE state = 'pending' AND detail IS NOT ?\(photos ? "" : " AND source = 'file'")
-            ORDER BY \(latestFirst ? "coalesce(queued_at, 0) DESC," : "") CASE kind WHEN 'screenshot' THEN 0 WHEN 'image' THEN 1 WHEN 'photo' THEN 1 WHEN 'pdf' THEN 2
+            ORDER BY \(latestFirst ? "coalesce(queued_at, 0) DESC," : "") \(firstOrder)CASE kind WHEN 'screenshot' THEN 0 WHEN 'image' THEN 1 WHEN 'photo' THEN 1 WHEN 'pdf' THEN 2
                      WHEN 'doc' THEN 3 WHEN 'audio' THEN 4 ELSE 5 END, mtime DESC
             LIMIT ?
-            """, [.text(Self.notHere), .int(Int64(limit))]) { out.append(Self.item($0)) }
+            """, values) { out.append(Self.item($0)) }
         return out
     }
 
@@ -524,19 +567,30 @@ public final class IndexStore {
     // MARK: Words
 
     /// The name segment: the file's name in `name`, the folders it's in (below the home folder) in `body`, so
-    /// "合同" finds a file in a folder called 合同.
+    /// "合同" finds a file in a folder called 合同. A name or folder kept percent-encoded goes in as it is and as
+    /// results show it (`Names.display`), so 「发票」 finds 「%E5%8F%91%E7%A5%A8.pdf」 by its name (#113).
     private func writeName(item: Int64, path: String) throws {
         try db.query("INSERT INTO segments(item, kind) VALUES(?, 'name')", [.int(item)])
-        let url = URL(fileURLWithPath: path)
-        let name = url.deletingPathExtension().lastPathComponent + " " + url.pathExtension
-        try writeWords(segment: db.lastInsertID, name: Self.spaced(name), body: Self.spaced(folderWords(path)))
+        try writeWords(segment: db.lastInsertID, name: Self.spaced(Self.nameWords(path)),
+                       body: Self.spaced(folderWords(path)))
+    }
+
+    /// A file's name without its extension, then decoded if it was kept percent-encoded, then the extension.
+    static func nameWords(_ path: String) -> String {
+        let file = (path as NSString).lastPathComponent, shown = Names.display(file)
+        let stem = (file as NSString).deletingPathExtension
+        let decoded = shown == file ? [] : [(shown as NSString).deletingPathExtension]
+        return ([stem] + decoded + [(file as NSString).pathExtension]).joined(separator: " ")
     }
 
     func folderWords(_ path: String) -> String {
         let parent = (path as NSString).deletingLastPathComponent
         let relative = parent.hasPrefix(home + "/") ? String(parent.dropFirst(home.count + 1))
             : parent.split(separator: "/").dropFirst(2).joined(separator: "/")
-        return relative.split(separator: "/").joined(separator: " ")
+        return relative.split(separator: "/").flatMap { folder -> [String] in
+            let shown = Names.display(String(folder))
+            return shown == folder ? [shown] : [String(folder), shown]
+        }.joined(separator: " ")
     }
 
     /// Names use _ - . as spaces ("Q3_invoice-list" is three words).

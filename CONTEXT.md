@@ -13,11 +13,11 @@ _Avoid_: 深度搜索（旧名）、DigUp、digup（那是参考的旧项目）�
 _Avoid_: 数据库（单说时）、向量库
 
 **要搜的地方**：
-用户选的文件夹，加上（用户同意时）照片图库。只读这些地方。
+默认是个人文件夹和 iCloud 云盘（11-10 起，用户不用挑，可以去掉）；用户点了「也搜这块盘」的外接盘（按盘的 UUID 记）；用户同意时，照片图库。只读这些地方。
 _Avoid_: 根目录、roots（代码里可以用 `roots`）
 
 **跳过**：
-不读的东西：用户排除的文件夹和类型、隐藏文件夹、包、名字像凭证的文件等。跳过的文件不进索引。
+不读的东西：用户排除（跳过）的文件夹和类型、隐藏文件夹、包、名字像凭证的文件、`~/Library`（iCloud 云盘除外）、个人文件夹里的「音乐」和装工具的文件夹（Applications、miniconda3、go、opt、虚拟机等）。跳过的文件不进索引。
 
 **凭证文件**：
 名字像密码、密钥、证书、令牌的文件（`id_rsa`、`.env`、`*.pem`、`*.p12`、`密码.txt`、`passwords.xlsx`……）。一律跳过，不读内容。例外：`.key` 只看开头 4 个字节，是 zip 的是单文件的 Keynote，不算凭证，也不读。
@@ -72,7 +72,7 @@ _Avoid_: 语义检索（文档里），AI 搜索
 _Avoid_: hit（代码里可以用 `hit`）
 
 **拒答门槛**：
-低于它就说"没找到对得上的"，不硬给结果。门槛要先在"语料里没有答案"的题上有评测数字才打开。
+低于它就说"没找到对得上的"，不硬给结果。门槛要先在"语料里没有答案"的题上有评测数字才打开。现在开着的是去掉弱的结果（2026-11-09）：只靠意思对上的要余弦够（`embeddinggemma-2/1` 是 0.62），分数不到第一名一半的不给（字词全中的除外）；都去掉了就是"没找到对得上的"。见 `evals/README.md`。
 
 ## 对外
 
@@ -80,7 +80,7 @@ _Avoid_: hit（代码里可以用 `hit`）
 本工具在 `~/.luoke-search/run/agent.sock` 上按 agent 工具协议（版本 1）提供的 MCP 子集；`luoke-search mcp` 在标准输入输出上提供同一组工具。
 
 **命令行**：
-`luoke-search` 命令（`index`、`search`、`open`、`status`、`settings`、`eval`、`mcp`），和 MCP 工具一一对应，`--json` 的输出和 MCP 的答复同一个格式。只给 agent 用的没有命令：`search_open_system_settings`、`outbox_ack`。照片权限在螺壳名下，本工具不问 macOS。
+`luoke-search` 命令（`index`、`search`、`open`、`status`、`settings`、`eval`、`mcp`），大体和 MCP 工具对应。没有命令的：`search_similar`、`search_open_system_settings`、`outbox_ack`，和应用页（`page/overview`）这类资源；应用页上的照片开关、每个地方的「不搜了」、个人文件夹里的「跳过」「不跳过了」、外接盘的「也搜这块盘」调的是 `search_settings_apply`（`photos`、`folder`、`skip`、`unskip`、`disk`）。命令行 `settings --add-folder home`、`--add-folder icloud` 是个人文件夹和 iCloud 云盘。`search --json` 的条目和 `search_query` 的不是同一个格式：`search_query` 按窗口的格式给条目，另外多了 `card`、`skipped`。照片权限在螺壳名下，本工具不问 macOS。
 
 **结果卡片**：
 `search_query` 答复里那张 A2UI 卡片（组件目录 `ai.luoke/a2ui/agent/1`），由 agent 画给用户。
@@ -94,4 +94,4 @@ _Avoid_: hit（代码里可以用 `hit`）
 一组有标准答案的题（查询 + 应该排在前面的条目和出处），用 `luoke-search eval` 跑，出第一名命中率、前五命中率、MRR。全部用合成语料。
 
 **参考向量集**：
-9 条参考输入（文字 5、图片 3、声音 1）和它们的标准向量，原样拷自上游 DigUp（`Tests/Reference/README.md`）。主控算的向量和它比余弦 ≥ 0.999 是及格线。
+16 条参考输入（文字 12、图片 3、声音 1）和它们的标准向量（`Tests/Reference/README.md`）。原来的 9 条（文字 5）原样拷自上游 DigUp，后来补了 7 条中文、长文、混排和代码的文字。主控算的向量和它比余弦 ≥ 0.999 是及格线。

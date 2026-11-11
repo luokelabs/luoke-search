@@ -91,6 +91,28 @@ public final class Indexer {
         }
     }
 
+    /// What's read first in a first pass (11-10, once the whole home folder is searched): files in these folders, and
+    /// any changed since this time, ahead of the rest. Empty: the kinds' order alone.
+    public var readFirst = ReadFirst()
+
+    public struct ReadFirst: Sendable, Equatable {
+        public var folders: [String] = []
+        public var since: Double?
+
+        public init(folders: [String] = [], since: Double? = nil) {
+            self.folders = folders
+            self.since = since
+        }
+    }
+
+    /// The desktop, documents and downloads, and what changed in the last 30 days: what people look for the same
+    /// day, while the rest of a large home folder takes hours.
+    public static func usualFirst(home: String = NSHomeDirectory(), now: Date = Date()) -> ReadFirst {
+        let home = Crawler.canonical(home)
+        return ReadFirst(folders: ["Desktop", "Documents", "Downloads"].map { home + "/" + $0 },
+                         since: now.timeIntervalSince1970 - 30 * 86_400)
+    }
+
     public init(store: IndexStore, crawler: Crawler = Crawler()) {
         self.store = store
         self.crawler = crawler
@@ -113,8 +135,10 @@ public final class Indexer {
         }
         datasets.merge(walk.datasets) { _, new in new }
         try store.setDatasetFolders(datasets)
+        // A root that can't be reached inside one that can (iCloud Drive not allowed, in a home folder that is) keeps
+        // its items too: the outer walk never goes there, so they aren't gone.
         try apply(known: try store.items(under: reachable), found: walk.files, kept: walk.kept,
-                  keptFolders: walk.keptFolders, into: &report)
+                  keptFolders: walk.keptFolders + walk.unreachable, into: &report)
         return report
     }
 
@@ -125,8 +149,11 @@ public final class Indexer {
         var known: [ItemRecord] = []
         var files: [FoundFile] = []
         var kept: [String] = [], keptFolders: [String] = []
-        for root in roots.map(Crawler.canonical) {
-            let mine = paths.filter { $0 == root || $0.hasPrefix(root + "/") }
+        let roots = roots.map(Crawler.canonical)
+        for root in roots {
+            // Each path to its innermost root only: a path in iCloud Drive isn't the home folder's to judge (its walk
+            // never goes into ~/Library, and would take the items for gone).
+            let mine = paths.filter { FolderWatcher.innermost($0, roots) == root }
             guard !mine.isEmpty else { continue }
             // A root that can't be listed now (a drive gone, access taken back) keeps its items, as in a whole walk.
             guard (try? FileManager.default.contentsOfDirectory(atPath: root)) != nil else { continue }
@@ -136,10 +163,14 @@ public final class Indexer {
             kept += walk.kept
             keptFolders += walk.keptFolders
             report.skipped.merge(walk.skipped, uniquingKeysWith: +)
+            var theirs: [ItemRecord] = []
             for path in mine {
-                if let item = try store.item(path: path) { known.append(item) }
-                known += try store.items(under: [path])
+                if let item = try store.item(path: path) { theirs.append(item) }
+                theirs += try store.items(under: [path])
             }
+            // Not what's under another root inside this one (the home folder changed as a whole: iCloud Drive's
+            // items are its own root's).
+            known += theirs.filter { FolderWatcher.innermost($0.path, roots) == root }
         }
         try apply(known: known, found: files, kept: kept, keptFolders: keptFolders, into: &report)
         return report
@@ -222,7 +253,7 @@ public final class Indexer {
                             progress: (ItemRecord, Reading) -> Void = { _, _ in }) throws -> Int {
         var count = 0
         while !shouldStop() {
-            let items = try store.pending(limit: batch, latestFirst: latestFirst, photos: photos != nil)
+            let items = try store.pending(limit: batch, latestFirst: latestFirst, photos: photos != nil, first: readFirst)
             if items.isEmpty { break }
             for item in items {
                 if shouldStop() { return count }

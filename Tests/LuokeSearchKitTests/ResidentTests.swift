@@ -2,6 +2,15 @@ import Foundation
 import Testing
 @testable import LuokeSearchKit
 
+/// Runs `work` on a thread of its own, for a test that waits for it ("from another thread, as PhotoKit does", "another
+/// connection holding the lock"). Not `DispatchQueue.global()`: that pool starts a new thread only while fewer of this
+/// process's threads than cores are running at its priority or higher, and while the whole suite runs the threads running
+/// the tests keep every core busy, so work handed to it waited 11.8 s to start (measured 11-09), longer than the tests
+/// waited for it. A thread of its own starts at once.
+func onAnotherThread(_ work: @escaping @Sendable () -> Void) {
+    Thread.detachNewThread(work)
+}
+
 /// Polls `condition` for up to `seconds` (FSEvents and the resident queue work on their own time).
 func eventually(_ seconds: Double = 10, _ condition: () throws -> Bool) rethrows -> Bool {
     let deadline = Date().addingTimeInterval(seconds)
@@ -172,7 +181,7 @@ struct ManifestTests {
         #expect(plist["CFBundleShortVersionString"] as? String == LuokeSearch.version)
         let json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: Self.manifest)) as? [String: Any])
         #expect(json["version"] as? String == LuokeSearch.version)
-        #expect(LuokeSearch.version == "0.1.14")
+        #expect(LuokeSearch.version == "0.1.21")
     }
 
     /// Info.plist names the icon `build_app.sh` makes, from a 1024-pixel square PNG in Resources.

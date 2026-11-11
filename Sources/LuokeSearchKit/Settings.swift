@@ -5,6 +5,8 @@ import Foundation
 public struct Settings: Codable, Sendable, Equatable {
     public var folders: [String] = []
     public var skipFolders: [String] = []
+    /// Disks the user chose to search (「也搜这块盘」), by UUID: searched where they're mounted (`Volumes.roots`).
+    public var volumes: [ChosenVolume] = []
     public var photos = false
     /// Build the index on battery power too (new files are always read), where luoke-core isn't there to say: off
     /// unless the user turns it on. While luoke-core answers, its own rule decides instead (it pauses background work
@@ -17,6 +19,7 @@ public struct Settings: Codable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey {
         case folders
         case skipFolders = "skip_folders"
+        case volumes
         case photos
         case onBattery = "on_battery"
     }
@@ -27,6 +30,7 @@ public struct Settings: Codable, Sendable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         folders = try container.decodeIfPresent([String].self, forKey: .folders) ?? []
         skipFolders = try container.decodeIfPresent([String].self, forKey: .skipFolders) ?? []
+        volumes = try container.decodeIfPresent([ChosenVolume].self, forKey: .volumes) ?? []
         photos = try container.decodeIfPresent(Bool.self, forKey: .photos) ?? false
         onBattery = try container.decodeIfPresent(Bool.self, forKey: .onBattery) ?? false
     }
@@ -60,9 +64,56 @@ public struct Settings: Codable, Sendable, Equatable {
     /// The folders to walk: the chosen ones, only those `searchable` when `restricted` (the app as it ships). Judged
     /// again at every walk: `settings.json` can be written by any process of this user, and a folder allowed when it
     /// was chosen may be a link to another since (pre-release review, should-fix 9, and its review).
-    public func searched(restricted: Bool, home: String = NSHomeDirectory()) -> [String] {
-        restricted ? folders.filter { Settings.searchable($0, home: home) } : folders
+    /// The chosen disks are searched where they're mounted now (`mounted`, asked only when there are any).
+    public func searched(restricted: Bool, home: String = NSHomeDirectory(),
+                         mounted: @autoclosure () -> [MountedVolume] = Volumes.external()) -> [String] {
+        let disks = volumes.isEmpty ? [] : Volumes.roots(volumes, mounted: mounted()).filter { !folders.contains($0) }
+        let all = folders + disks
+        return restricted ? all.filter { Settings.searchable($0, home: home) } : all
     }
+
+    /// What a prune keeps: every folder chosen, and each chosen disk where it was and where it's mounted now (one
+    /// unplugged, or out of the way of another disk mounted at its place, keeps what was read of it).
+    /// `restricted`: only folders `searchable` (the app as it ships), as for `searched`: one that isn't any more (a
+    /// link to elsewhere since) has its items removed.
+    public func keptRoots(restricted: Bool = false, home: String = NSHomeDirectory(),
+                          mounted: @autoclosure () -> [MountedVolume] = Volumes.external()) -> [String] {
+        let chosen = restricted ? folders.filter { Settings.searchable($0, home: home) } : folders
+        guard !volumes.isEmpty else { return chosen }
+        let now = Volumes.roots(volumes, mounted: mounted())
+        return chosen + volumes.map(\.path) + now.filter { !volumes.map(\.path).contains($0) }
+    }
+
+    /// Each chosen disk mounted at another path now ("备份 1" while another "备份" was there) is kept at that path
+    /// from now on: what was read at the old one is pruned, not left to be opened on whatever disk mounts there
+    /// next. Written under the data directory's lock; whether anything changed.
+    @discardableResult
+    public static func followDisks(_ directory: DataDirectory, mounted: [MountedVolume]) throws -> Bool {
+        try Stored.locked(directory) {
+            guard var settings = Settings.read(directory), !settings.volumes.isEmpty else { return false }
+            var moved = false
+            for index in settings.volumes.indices {
+                if let here = mounted.first(where: { $0.uuid == settings.volumes[index].uuid }),
+                   here.path != settings.volumes[index].path {
+                    settings.volumes[index].path = here.path
+                    moved = true
+                }
+            }
+            if moved { try settings.save(directory) }
+            return moved
+        }
+    }
+
+    /// What the app searches unless the user takes it out (11-10): the whole home folder (the walk leaves out what
+    /// isn't the user's: hidden folders, ~/Library, Music, tools' folders) and iCloud Drive (the only part of
+    /// ~/Library searched; other cloud storage isn't).
+    public static func homeScope(home: String = NSHomeDirectory()) -> [String] {
+        let home = Crawler.canonical(home)
+        return [home, home + "/" + iCloudDrive]
+    }
+
+    /// iCloud Drive, under the home folder: what Finder shows as 「iCloud 云盘」 (its own folder and the apps').
+    public static let iCloudDrive = "Library/Mobile Documents"
 
     /// Where a folder may be searched (pre-release review, should-fix 9): the home folder and what's inside it, and
     /// what's on another volume (`/Volumes/<name>/…`); none of it hidden (a part starting with "."), and inside
@@ -106,6 +157,9 @@ public struct Settings: Codable, Sendable, Equatable {
                       "movies": "Movies", "music": "Music", "桌面": "Desktop", "文稿": "Documents", "文档": "Documents",
                       "下载": "Downloads", "图片": "Pictures", "影片": "Movies", "音乐": "Music"]
         if let place = places[name.lowercased()] { return home + "/" + place }
+        // The two the app searches by default, spelled as the walk spells them (as "~" is).
+        if ["home", "个人文件夹", "主文件夹"].contains(name.lowercased()) { return Crawler.canonical(home) }
+        if ["icloud", "icloud drive", "icloud 云盘", "icloud云盘"].contains(name.lowercased()) { return homeScope(home: home)[1] }
         // "~" is the home given (a test's own), as it is for the real one; "~someone" as macOS says.
         let expanded = name == "~" || name.hasPrefix("~/") ? home + name.dropFirst() : (name as NSString).expandingTildeInPath
         // Spelled as stored ("Documents/工作/" is "…/Documents/工作"), so it compares equal (review C-21).
@@ -124,6 +178,11 @@ public struct SettingsPlan: Codable, Sendable, Equatable {
     public var addFolders: [String] = []
     public var removeFolders: [String] = []
     public var skipFolders: [String] = []
+    /// Skipped folders searched again.
+    public var unskipFolders: [String] = []
+    public var addVolumes: [ChosenVolume] = []
+    /// By UUID.
+    public var removeVolumes: [String] = []
     public var photos: Bool?
     public var onBattery: Bool?
     /// Whether `settings` are still what the plan was made against. One made before building on battery power was
@@ -146,13 +205,40 @@ public struct SettingsPlan: Codable, Sendable, Equatable {
         case addFolders = "add_folders"
         case removeFolders = "remove_folders"
         case skipFolders = "skip_folders"
+        case unskipFolders = "unskip_folders"
+        case addVolumes = "add_volumes"
+        case removeVolumes = "remove_volumes"
         case photos
         case onBattery = "on_battery"
         case choices
     }
 
+    public init(id: String, made: Double, basis: Settings) {
+        self.id = id
+        self.made = made
+        self.basis = basis
+    }
+
+    /// Keys added later read as empty: a plan kept by an earlier version is still one.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        made = try container.decode(Double.self, forKey: .made)
+        basis = try container.decode(Settings.self, forKey: .basis)
+        addFolders = try container.decodeIfPresent([String].self, forKey: .addFolders) ?? []
+        removeFolders = try container.decodeIfPresent([String].self, forKey: .removeFolders) ?? []
+        skipFolders = try container.decodeIfPresent([String].self, forKey: .skipFolders) ?? []
+        unskipFolders = try container.decodeIfPresent([String].self, forKey: .unskipFolders) ?? []
+        addVolumes = try container.decodeIfPresent([ChosenVolume].self, forKey: .addVolumes) ?? []
+        removeVolumes = try container.decodeIfPresent([String].self, forKey: .removeVolumes) ?? []
+        photos = try container.decodeIfPresent(Bool.self, forKey: .photos)
+        onBattery = try container.decodeIfPresent(Bool.self, forKey: .onBattery)
+        choices = try container.decodeIfPresent([String: Bool].self, forKey: .choices)
+    }
+
     public var isEmpty: Bool {
-        addFolders.isEmpty && removeFolders.isEmpty && skipFolders.isEmpty && photos == nil && onBattery == nil
+        addFolders.isEmpty && removeFolders.isEmpty && skipFolders.isEmpty && unskipFolders.isEmpty && addVolumes.isEmpty
+            && removeVolumes.isEmpty && photos == nil && onBattery == nil
     }
 
     static func folderChoice(_ index: Int) -> String { "folder\(index)" }
@@ -177,6 +263,9 @@ public struct SettingsPlan: Codable, Sendable, Equatable {
         for folder in addFolders where !out.folders.contains(folder) { out.folders.append(folder) }
         out.folders.removeAll { removeFolders.contains($0) }
         for folder in skipFolders where !out.skipFolders.contains(folder) { out.skipFolders.append(folder) }
+        out.skipFolders.removeAll { unskipFolders.contains($0) }
+        for volume in addVolumes where !out.volumes.contains(where: { $0.uuid == volume.uuid }) { out.volumes.append(volume) }
+        out.volumes.removeAll { removeVolumes.contains($0.uuid) }
         if let photos { out.photos = photos }
         if let onBattery { out.onBattery = onBattery }
         return out

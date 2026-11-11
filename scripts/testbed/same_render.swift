@@ -80,12 +80,66 @@ func screen(_ item: Item) throws {
     try write(context, to: item.path, type: .png)
 }
 
+/// A passport-like booklet photographed on a desk: a dark red cover, a gold emblem, the lines in gold. Made up.
+func booklet(_ item: Item) throws {
+    let width = 1600, height = 1200
+    let context = bitmap(width: width, height: height)
+    context.setFillColor(CGColor(red: 0.62, green: 0.52, blue: 0.4, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    context.translateBy(x: CGFloat(width) / 2, y: CGFloat(height) / 2)
+    context.rotate(by: 0.06)
+    let cover = CGRect(x: -330, y: -470, width: 660, height: 940)
+    context.setFillColor(CGColor(red: 0.42, green: 0.07, blue: 0.09, alpha: 1))
+    context.fill(cover)
+    let gold = CGColor(red: 0.85, green: 0.7, blue: 0.35, alpha: 1)
+    context.setStrokeColor(gold)
+    context.setLineWidth(10)
+    context.strokeEllipse(in: CGRect(x: -120, y: -40, width: 240, height: 240))
+    context.setFillColor(gold)
+    context.fillEllipse(in: CGRect(x: -60, y: 20, width: 120, height: 120))
+    let font = CTFontCreateWithName("PingFang SC" as CFString, 54, nil)
+    for (index, line) in item.lines.enumerated() {
+        let text = NSAttributedString(string: line, attributes: [.font: font, .foregroundColor: NSColor(cgColor: gold)!])
+        let ctLine = CTLineCreateWithAttributedString(text)
+        let lineWidth = CTLineGetTypographicBounds(ctLine, nil, nil, nil)
+        context.textPosition = CGPoint(x: -lineWidth / 2, y: cover.maxY - 140 - CGFloat(index) * 90 - (index > 0 ? 420 : 0))
+        CTLineDraw(ctLine, context)
+    }
+    try write(context, to: item.path, type: .jpeg)
+}
+
+/// An ID photo: head and shoulders on a plain white background, as passport photos are taken. Nobody in particular.
+func portrait(_ item: Item) throws {
+    let width = 660, height = 960
+    let context = bitmap(width: width, height: height)
+    context.setFillColor(CGColor(gray: 0.98, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    context.setFillColor(CGColor(red: 0.12, green: 0.14, blue: 0.2, alpha: 1))   // jacket
+    context.fillEllipse(in: CGRect(x: 40, y: -260, width: 580, height: 520))
+    context.setFillColor(CGColor(red: 0.93, green: 0.78, blue: 0.66, alpha: 1))   // neck and face
+    context.fill(CGRect(x: 280, y: 220, width: 100, height: 110))
+    context.fillEllipse(in: CGRect(x: 200, y: 300, width: 260, height: 330))
+    context.fillEllipse(in: CGRect(x: 180, y: 420, width: 40, height: 80))     // ears
+    context.fillEllipse(in: CGRect(x: 440, y: 420, width: 40, height: 80))
+    context.setFillColor(CGColor(red: 0.1, green: 0.08, blue: 0.07, alpha: 1))   // hair, eyes, brows
+    context.fillEllipse(in: CGRect(x: 195, y: 520, width: 270, height: 150))
+    context.fillEllipse(in: CGRect(x: 268, y: 470, width: 28, height: 18))
+    context.fillEllipse(in: CGRect(x: 364, y: 470, width: 28, height: 18))
+    context.fill(CGRect(x: 262, y: 500, width: 42, height: 6))
+    context.fill(CGRect(x: 358, y: 500, width: 42, height: 6))
+    context.setFillColor(CGColor(red: 0.75, green: 0.4, blue: 0.4, alpha: 1))   // mouth
+    context.fill(CGRect(x: 300, y: 370, width: 60, height: 10))
+    try write(context, to: item.path, type: .jpeg)
+}
+
 let spec = try JSONDecoder().decode([Item].self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1])))
 for item in spec {
     switch item.kind {
     case "pdf": try pdf(item)
     case "paper": try paper(item)
     case "screen": try screen(item)
+    case "booklet": try booklet(item)
+    case "portrait": try portrait(item)
     default: fatalError("unknown kind \(item.kind)")
     }
 }

@@ -377,7 +377,7 @@ struct DocReviewServiceTests {
         try madeBefore(setup)
         #expect(try setup.planID(setup.setup) == plan)   // the same card stays
         #expect(SetupHome.code(setup.tap(plan)) == nil)
-        #expect(Settings.load(setup.directory).folders.count == 3)
+        #expect(Settings.load(setup.directory).folders == Settings.homeScope(home: setup.home).prefix(1).map { $0 })
         // Settings saved since (battery off, the user's own): stale, as any change since.
         let saved = try SetupHome()
         let old = try saved.planID(saved.setup)

@@ -268,7 +268,7 @@ struct RefusalTests {
         #expect(report.records[0].rank == 1)
         #expect(report.records[0].share == 1)
         #expect(report.records[0].z == nil)   // no vectors here
-        #expect(report.records[0].strong == report.records[0].hits)
+        #expect(report.records[0].strong == 0)   // the word only in the text, and no vectors: not sure
         #expect(report.records[1].hits == 0 && report.records[1].top == nil)
         let first = try #require(report.rules.first)
         #expect(first.rule == "score ≥ 1.0")

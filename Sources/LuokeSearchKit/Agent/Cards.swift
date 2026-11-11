@@ -201,17 +201,28 @@ public struct Card {
 
 /// The cards luoke-search shows through the agent.
 enum Cards {
+    /// Over the results when none of the rows shown is sure.
+    static let noneSure = "没有很对得上的，下面这些可能相关。"
+
     /// Results: the first five, each with [打开] and [在访达中显示] (both `search_open`: on the user's tap only, Mac only).
-    static func results(_ answer: SearchAnswer, query: String, surfaceID: String) -> [[String: Any]] {
+    /// `searched`: with none, the folders that were looked in (`SearchService.searchedNote`).
+    static func results(_ answer: SearchAnswer, query: String, searched: String? = nil,
+                        surfaceID: String) -> [[String: Any]] {
         var card = Card(surfaceID: surfaceID)
         let shown = answer.hits.prefix(5)
         card.heading(answer.hits.isEmpty ? "没有找到对得上的" : "找到 \(answer.hits.count) 条")
         if let reason = answer.partialReason { card.text(reason, caption: true) }
+        // `strong` is a result's own (the name holds the words, or it's close in meaning), not its place in the list,
+        // and a sure one may rank below the rows shown: judged on those. When none is, one line says so rather than a
+        // 「可能相关」 on every row; a listing of the newest (score 0) isn't an answer and says neither.
+        let anySure = shown.contains(where: \.strong)
+        if !anySure, shown.contains(where: { $0.score > 0 }) { card.text(Self.noneSure, caption: true) }
+        if answer.hits.isEmpty, let searched { card.text(searched, caption: true) }
         for hit in shown {
             var line = [hit.kind.label]
             if let place = hit.where.flatMap(Cards.place) { line.append(place) }
             line.append(String(hit.date.prefix(10)))
-            if !hit.strong { line.append("可能相关") }
+            if anySure, !hit.strong { line.append("可能相关") }
             let buttons = openings(hit).enumerated().map { index, opening in
                 Card.Button(opening.label, event: "search_open", context: opening.args, primary: index == 0)
             }
@@ -321,15 +332,22 @@ enum Cards {
         return card.messages()
     }
 
-    /// Folders the page names, then "等": beyond them the line under the count would only grow.
+    /// Folders the page lists, each on its own line: beyond them, how many more (a card holds 200 components).
     static let maxFoldersShown = 20
-    /// The longest list of names that fits on the right of its line (it doesn't wrap there); longer goes below it.
-    static let maxFolderLine = 24
+    /// The same for the home folder's own folders (「跳过」), the skipped ones and the disks offered.
+    static let maxInHomeShown = 10, maxSkippedShown = 5, maxDisksShown = 3
+
+    /// A folder on the app's page: what the user knows it as, and what a 「不搜了」 tap carries (`folderID`).
+    typealias PageFolder = (name: String, id: String)
 
     /// The app's page (`SearchService.overview`). `photos`: `status()`'s word for them. `photosRefused`: macOS was
-    /// asked and said no, so it won't ask again.
-    static func overview(exact: SearchState, semantic: SearchState, note: String?, folders: [String], photos: String,
-                         photosRefused: Bool = false, lastRead: Double?, photosSwitch: Bool) -> [[String: Any]] {
+    /// asked and said no, so it won't ask again. `changeable`: something's been chosen, so the page may change the
+    /// settings (the Photos switch, 「不搜了」).
+    /// `inHome`: the folders right in a searched home folder (each with 「跳过」); `skipped`: the folders skipped (each
+    /// with 「不跳过了」); `disks`: disks plugged in and not searched (「也搜这块盘」, carrying the disk's UUID).
+    static func overview(exact: SearchState, semantic: SearchState, note: String?, folders: [PageFolder],
+                         inHome: [PageFolder] = [], skipped: [PageFolder] = [], disks: [PageFolder] = [], photos: String,
+                         photosRefused: Bool = false, lastRead: Double?, changeable: Bool) -> [[String: Any]] {
         var card = Card(surfaceID: SearchService.overviewPage, gap: 12)
         card.line("精确搜索", exact.text, progress: exact.progress)
         card.divider()
@@ -337,17 +355,54 @@ enum Cards {
         if let note { card.text(note, caption: true) }
         card.divider()
 
-        let names = folders.joined(separator: "、")
-        if folders.isEmpty {
-            card.line("文件夹", "还没选")
-        } else if names.unicodeScalars.count <= maxFolderLine {
-            card.line("文件夹", names)
-        } else {
-            card.line("文件夹", "\(folders.count) 个")
-            let shown = folders.prefix(maxFoldersShown).joined(separator: "、")
-            card.text(shown + (folders.count > maxFoldersShown ? " 等" : ""), caption: true)
+        // Each folder on a line of its own, with 「不搜了」 once something's chosen (before that the setup card asks, and
+        // a change here would end it: `flipPhotos`). The tap names the folder by its id, looked up in the settings
+        // again (`stopSearching`).
+        card.line("文件夹", folders.isEmpty ? "还没选" : "\(folders.count) 个")
+        for folder in folders.prefix(maxFoldersShown) {
+            card.line(folder.name, nil, buttons: changeable ? [
+                Card.Button("不搜了", event: "search_settings_apply", context: ["folder": folder.id])] : [])
+        }
+        if folders.count > maxFoldersShown {
+            card.text("还有 \(folders.count - maxFoldersShown) 个没列出；要不搜哪个，在对话里说", caption: true)
         }
         card.divider()
+
+        // The home folder's own folders, each skippable, and what's skipped, each searchable again (11-10).
+        if changeable, !inHome.isEmpty {
+            card.line("个人文件夹里", "不想搜的可以跳过")
+            for folder in inHome.prefix(maxInHomeShown) {
+                card.line(folder.name, nil, buttons: [
+                    Card.Button("跳过", event: "search_settings_apply", context: ["skip": folder.id])])
+            }
+            if inHome.count > maxInHomeShown {
+                card.text("还有 \(inHome.count - maxInHomeShown) 个没列出；要跳过哪个，在对话里说", caption: true)
+            }
+            card.divider()
+        }
+        if changeable, !skipped.isEmpty {
+            card.line("跳过的", "\(skipped.count) 个")
+            for folder in skipped.prefix(maxSkippedShown) {
+                card.line(folder.name, nil, buttons: [
+                    Card.Button("不跳过了", event: "search_settings_apply", context: ["unskip": folder.id])])
+            }
+            if skipped.count > maxSkippedShown {
+                card.text("还有 \(skipped.count - maxSkippedShown) 个没列出；要改的话，在对话里说", caption: true)
+            }
+            card.divider()
+        }
+        // Disks plugged in: not searched until the user says so (11-10).
+        if changeable, !disks.isEmpty {
+            card.line("外接盘", "默认不搜")
+            for disk in disks.prefix(maxDisksShown) {
+                card.line(disk.name, nil, buttons: [
+                    Card.Button("也搜这块盘", event: "search_settings_apply", context: ["disk": disk.id])])
+            }
+            if disks.count > maxDisksShown {
+                card.text("还有 \(disks.count - maxDisksShown) 块没列出；先拔掉不用的再来点", caption: true)
+            }
+            card.divider()
+        }
 
         let on = photos != "off"
         // Chosen but not allowed: what to do about it, on the line that says photos are searched. The permission is
@@ -356,7 +411,7 @@ enum Cards {
         let allow = !on || photos == "on" ? [] : [
             Card.Button(photosRefused ? "去系统设置" : "允许", event: "search_open_system_settings",
                         context: ["pane": "photos", "permission": "photos"])]
-        if photosSwitch {
+        if changeable {
             card.line("搜照片图库", nil, buttons: allow + [
                 // Turning it on needs the permission first (`needs`): luoke asks for what's missing, then this runs.
                 Card.Button(on ? "不再搜照片" : "也搜照片", event: "search_settings_apply",

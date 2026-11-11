@@ -21,6 +21,9 @@ public struct ToolFailure: Error, @unchecked Sendable {
 public final class MCPServer: @unchecked Sendable {
     public static let protocolVersion = "2026-07-28"
     static let userAction = "ai.luoke/user-action"
+    /// Where a request carries the token (agent tool protocol §2), and the error without the right one.
+    static let tokenKey = "ai.luoke/token"
+    public static let badToken = -32001
 
     public struct Tool {
         public let name: String
@@ -76,6 +79,10 @@ public final class MCPServer: @unchecked Sendable {
     private var blobs: [Blobs] = []
     /// One request at a time: the index, its searcher and the settings are used from one thread at a time.
     private let lock = NSLock()
+    /// The app as it ships, on the agent's socket: every request, reads too, carries `token` in `_meta`, or is
+    /// refused before anything runs. With no token (螺壳 gave none) every request is refused. Set before serving.
+    public var needsToken = false
+    public var token: String?
     /// Where a tool's own faults go: stderr is its log. A log nobody reads any more is no reason to stop, and only
     /// `serve` ignores SIGPIPE: `mcp` would die here, with the client still waiting for its answer.
     var logged: (String) -> Void = {
@@ -116,6 +123,13 @@ public final class MCPServer: @unchecked Sendable {
             return Self.encode(Self.error(nil, -32700, "不是 JSON"))
         }
         return handle(message).flatMap(Self.encode)
+    }
+
+    /// Equal, in a time that doesn't depend on where they first differ.
+    static func same(_ a: String, _ b: String) -> Bool {
+        let x = Array(a.utf8), y = Array(b.utf8)
+        guard x.count == y.count else { return false }
+        return zip(x, y).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
     }
 
     /// Objects and arrays in a request nest at most this deep. Foundation's parser recurses, a level of objects at a
@@ -196,7 +210,13 @@ public final class MCPServer: @unchecked Sendable {
         let id = message["id"]
         guard Self.validID(id) else { return Self.error(nil, -32600, "id 要是不太长的字符串、数或 null") }
         guard let params = Self.object(message["params"]) else { return Self.error(id, -32602, "params 要是对象") }
-        guard let meta = Self.object(params["_meta"]) else { return Self.error(id, -32602, "_meta 要是对象") }
+        guard var meta = Self.object(params["_meta"]) else { return Self.error(id, -32602, "_meta 要是对象") }
+        if needsToken {
+            guard let want = token, let got = meta[Self.tokenKey] as? String, Self.same(got, want) else {
+                return Self.error(id, Self.badToken, "口令不对")
+            }
+        }
+        meta.removeValue(forKey: Self.tokenKey)     // no tool sees it
         if let version = meta["io.modelcontextprotocol/protocolVersion"] as? String, version != Self.protocolVersion {
             return Self.error(id, -32602, "不支持这个协议版本", data: ["supportedVersions": [Self.protocolVersion]])
         }

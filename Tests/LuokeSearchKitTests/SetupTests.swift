@@ -28,6 +28,15 @@ final class SetupHome {
         server = AgentTools.server(service)
     }
 
+    /// The home folder as the settings keep it (as the walk spells it), and iCloud Drive in it.
+    var homeFolder: String { Settings.homeScope(home: home)[0] }
+    var iCloud: String { Settings.homeScope(home: home)[1] }
+
+    /// iCloud Drive made in the scratch home: offered too, as the second choice (`folder1`).
+    func makeICloud() throws {
+        try FileManager.default.createDirectory(atPath: home + "/Library/Mobile Documents", withIntermediateDirectories: true)
+    }
+
     var items: [[String: Any]] { service.outbox()["items"] as? [[String: Any]] ?? [] }
     var setup: [String: Any]? { items.first { $0["kind"] as? String == "needs-setup" } }
 
@@ -194,12 +203,12 @@ struct ShippedSettingsTests {
 
 extension ReadsPictures {
     struct SetupReportTests {
-        @Test("Nothing chosen: the outbox offers the usual places that are there and searchable, ticked; Photos not")
+        @Test("Nothing chosen: the outbox offers the home folder and iCloud Drive that are there and searchable, ticked; Photos not")
         func offered() throws {
             let setup = try SetupHome(places: ["Desktop", "Documents"])
-            // Downloads is there, but a link into ~/Library: not offered.
+            // iCloud Drive is there, but a link to elsewhere in ~/Library: not offered.
             try FileManager.default.createDirectory(atPath: setup.home + "/Library/Messages", withIntermediateDirectories: true)
-            try FileManager.default.createSymbolicLink(atPath: setup.home + "/Downloads",
+            try FileManager.default.createSymbolicLink(atPath: setup.home + "/Library/Mobile Documents",
                                                        withDestinationPath: setup.home + "/Library/Messages")
             let items = setup.items
             #expect(items.map { $0["kind"] as? String } == ["needs-setup"])
@@ -207,11 +216,12 @@ extension ReadsPictures {
             #expect(item["id"] as? String == "needs-setup" && item["urgency"] as? String == "normal")
             #expect((item["title"] as? String) == "螺壳搜索还没选要搜的地方")
             // Named as Finder names them, without asking Finder (it may look inside, and macOS would ask first).
-            #expect((item["summary"] as? String)?.contains("「桌面」、「文稿」") == true)
+            #expect((item["summary"] as? String)?.contains("「个人文件夹」") == true)
+            #expect((item["summary"] as? String)?.contains("iCloud") == false)
             let components = SetupHome.components(item["card"])
             let boxes = components.filter { $0["component"] as? String == "CheckBox" }
-            #expect(boxes.map { $0["label"] as? String } == ["桌面", "文稿", "照片图库里的照片和视频（要你允许读照片）"])
-            #expect(SetupHome.checks(item["card"]) == ["folder0": true, "folder1": true, "photos": false])
+            #expect(boxes.map { $0["label"] as? String } == ["个人文件夹", "照片图库里的照片和视频（要你允许读照片）"])
+            #expect(SetupHome.checks(item["card"]) == ["folder0": true, "photos": false])
             let apply = try #require(components.first {
                 (($0["action"] as? [String: Any])?["event"] as? [String: Any])?["name"] as? String == "search_settings_apply"
             })
@@ -223,16 +233,17 @@ extension ReadsPictures {
             #expect(ToolState.load(setup.directory).plans.count == 1)
             #expect(Settings.load(setup.directory).folders.isEmpty)
             // A place made since: the card is made again, the old plan dropped.
-            try FileManager.default.removeItem(atPath: setup.home + "/Downloads")
-            try FileManager.default.createDirectory(atPath: setup.home + "/Downloads", withIntermediateDirectories: true)
+            try FileManager.default.removeItem(atPath: setup.home + "/Library/Mobile Documents")
+            try setup.makeICloud()
             let again = try #require(setup.setup)
             #expect(try setup.planID(again) != (try setup.planID(item)))
-            #expect(SetupHome.checks(again["card"]).count == 4)
+            #expect((again["summary"] as? String)?.contains("「个人文件夹」和「iCloud 云盘」") == true)
+            #expect(SetupHome.checks(again["card"]).count == 3)
             #expect(ToolState.load(setup.directory).plans.map(\.id) == [try setup.planID(again)])
             #expect(SetupHome.code(setup.tap(try setup.planID(item))) == "stale")
         }
 
-        @Test("Not offered: in a development run, with none of the places there, with the settings unreadable")
+        @Test("Not offered: in a development run, with no home folder there, with the settings unreadable")
         func notOffered() throws {
             let development = try SetupHome()
             development.service.restrictFolders = false
@@ -247,6 +258,7 @@ extension ReadsPictures {
         @Test("Tapped: what's ticked is chosen; after that it isn't offered, even once everything's taken out again")
         func chosen() throws {
             let setup = try SetupHome()
+            try setup.makeICloud()
             let plan = try setup.planID(setup.setup)
             // Without the user's tap, with a choice not on the card, with nothing ticked: nothing changes.
             let untapped = setup.server.handle(["jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": [
@@ -255,19 +267,19 @@ extension ReadsPictures {
             #expect(((untapped?["result"] as? [String: Any]).map(SetupHome.code)) == "needs_user_action")
             #expect(SetupHome.code(setup.tap(plan, checks: ["folder9": true])) == "invalid")
             #expect(SetupHome.code(setup.tap(plan, checks: ["photos": "yes"])) == "invalid")
-            #expect(SetupHome.code(setup.tap(plan, checks: ["folder0": false, "folder1": false, "folder2": false])) == "invalid")
+            #expect(SetupHome.code(setup.tap(plan, checks: ["folder0": false, "folder1": false])) == "invalid")
             #expect(SetupHome.code(setup.tap(plan, surface: "s-other")) == "needs_user_action")
             #expect(Settings.load(setup.directory).folders.isEmpty)
-            // Downloads unticked, Photos ticked.
-            let done = setup.tap(plan, checks: ["folder0": true, "folder1": true, "folder2": false, "photos": true])
+            // iCloud Drive unticked, Photos ticked.
+            let done = setup.tap(plan, checks: ["folder0": true, "folder1": false, "photos": true])
             #expect((done["structuredContent"] as? [String: Any])?["done"] as? Bool == true)
             let settings = Settings.load(setup.directory)
-            #expect(settings.folders == [setup.home + "/Desktop", setup.home + "/Documents"] && settings.photos)
+            #expect(settings.folders == [setup.homeFolder] && settings.photos)
             #expect(setup.setup == nil)
             #expect(ToolState.load(setup.directory).foldersChosen != nil)
             // All taken out again (the user's own doing): not offered again.
             var change = SearchService.Change()
-            change.removeFolders = ["desktop", "documents"]
+            change.removeFolders = ["home"]
             change.photos = false
             _ = try setup.service.apply(planID: try setup.service.plan(change).0.id, surfaceID: nil)
             #expect(Settings.load(setup.directory).folders.isEmpty && !Settings.load(setup.directory).photos)
@@ -328,31 +340,31 @@ extension ReadsPictures {
             #expect(setup.setup != nil)
             #expect(ToolState.load(setup.directory).foldersChosen == nil)
             #expect((setup.tap(try setup.planID(setup.setup))["structuredContent"] as? [String: Any])?["done"] as? Bool == true)
-            #expect(try setup.service.status()["folders"] as? [String] == [setup.home + "/Desktop", setup.home + "/Documents",
-                                                                       setup.home + "/Downloads"])
+            #expect(try setup.service.status()["folders"] as? [String] == [setup.homeFolder])
         }
 
         @Test("A folder macOS won't let it read: the card drawn again with the ticks left as they are")
         func notReadable() throws {
             let setup = try SetupHome()
-            chmod(setup.home + "/Documents", 0o000)
-            defer { chmod(setup.home + "/Documents", 0o755) }
+            try setup.makeICloud()
+            chmod(setup.iCloud, 0o000)
+            defer { chmod(setup.iCloud, 0o755) }
             let plan = try setup.planID(setup.setup)
-            let result = setup.tap(plan, checks: ["folder2": false])
+            let result = setup.tap(plan, checks: ["photos": true])
             #expect(SetupHome.code(result) == "needs_setup")
             let card = (result["structuredContent"] as? [String: Any])?["card"]
             #expect(SetupHome.surfaceID(card) == nil)   // the same card, in place
             #expect(SetupHome.checks(card).isEmpty)     // its ticks untouched
             let components = SetupHome.components(card)
-            #expect(components.filter { $0["component"] as? String == "CheckBox" }.count == 4)
-            #expect(components.contains { ($0["text"] as? String)?.contains("「文稿」：在系统设置里允许以后") == true })
+            #expect(components.filter { $0["component"] as? String == "CheckBox" }.count == 3)
+            #expect(components.contains { ($0["text"] as? String)?.contains("「iCloud 云盘」：在系统设置里允许以后") == true })
             #expect(components.contains {
                 (($0["action"] as? [String: Any])?["event"] as? [String: Any])?["name"] as? String == "search_open_system_settings"
             })
-            // Desktop alone goes through, the plan's still there to tap.
-            #expect((setup.tap(plan, checks: ["folder1": false, "folder2": false])["structuredContent"]
+            // The home folder alone goes through, the plan's still there to tap.
+            #expect((setup.tap(plan, checks: ["folder1": false])["structuredContent"]
                      as? [String: Any])?["done"] as? Bool == true)
-            #expect(Settings.load(setup.directory).folders == [setup.home + "/Desktop"])
+            #expect(Settings.load(setup.directory).folders == [setup.homeFolder])
         }
 
         /// The agent's own card checker (`scripts/agent/a2ui.py`, luoke-agent's, unmodified): draws the card, then
@@ -374,13 +386,14 @@ extension ReadsPictures {
               .enabled(if: agentScripts != nil))
         func asTheAgentDrawsIt() throws {
             let setup = try SetupHome()
+            try setup.makeICloud()
             let item = try #require(setup.setup)
             let card = try setup.scratch.write("card.json", data: try JSONSerialization.data(withJSONObject: item["card"] ?? []))
             let scripts = try #require(agentScripts)
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
             process.arguments = ["-I", "-c", Self.agentTap, scripts, card.path,
-                                 #"{"folder0": true, "folder1": false, "folder2": true, "photos": true}"#]
+                                 #"{"folder0": true, "folder1": false, "photos": true}"#]
             let out = Pipe()
             process.standardOutput = out
             try process.run()
@@ -390,13 +403,13 @@ extension ReadsPictures {
             let tap = try #require(try JSONSerialization.jsonObject(with: said) as? [String: Any])
             #expect(tap["name"] as? String == "search_settings_apply")
             let untouched = try #require(tap["untouched"] as? [String: Any])
-            #expect(untouched["checks"] as? [String: Bool] == ["folder0": true, "folder1": true, "folder2": true, "photos": false])
+            #expect(untouched["checks"] as? [String: Bool] == ["folder0": true, "folder1": true, "photos": false])
             let arguments = try #require(tap["arguments"] as? [String: Any])
             let plan = try #require(arguments["plan_id"] as? String)
             let done = setup.tap(plan, checks: arguments["checks"] as? [String: Any])
             #expect((done["structuredContent"] as? [String: Any])?["done"] as? Bool == true)
             let settings = Settings.load(setup.directory)
-            #expect(settings.folders == [setup.home + "/Desktop", setup.home + "/Downloads"] && settings.photos)
+            #expect(settings.folders == [setup.homeFolder] && settings.photos)
         }
 
         @Test("Tapped [好]: the folders ticked start being indexed")
@@ -415,9 +428,9 @@ extension ReadsPictures {
             Thread.sleep(forTimeInterval: 1)
             #expect(try searcher.search("搬家公司").hits.isEmpty)   // nothing chosen, nothing read
             let plan = try setup.planID(setup.setup)
-            _ = setup.tap(plan, checks: ["folder2": false])
+            _ = setup.tap(plan)
             #expect(try eventually { try searcher.search("搬家公司").hits.first?.title == "搬家清单.md" })
-            #expect(try searcher.search("电费发票").hits.isEmpty)   // Downloads unticked
+            #expect(try eventually { try searcher.search("电费发票").hits.first?.title == "发票.txt" })
         }
     }
 }

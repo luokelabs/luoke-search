@@ -59,6 +59,7 @@ public struct FirstPass {
         let indexer = Indexer(store: store, crawler: crawler)
         indexer.photos = library
         indexer.watchdog = watchdog
+        indexer.readFirst = Indexer.usualFirst()
         do {
             try indexer.noteStopped(directory)
             if syncs {
@@ -66,7 +67,7 @@ public struct FirstPass {
                 if !folders.isEmpty {
                     report.sync = try indexer.sync(folders)
                 }
-                report.sync.removed += try indexer.prune(keeping: folders)
+                report.sync.removed += try indexer.prune(keeping: settings.keptRoots(restricted: restrictFolders))
                 if let library {
                     let photos = try PhotoIndexing.sync(library, store: store, shouldStop: shouldStop)
                     report.sync.added += photos.added
@@ -120,6 +121,8 @@ public final class Resident: @unchecked Sendable {
     private var settingsDate: Date?
     private var photosAccess: PhotoAccess?
     private var unreadableFolders: Set<String> = []
+    /// The folders watched since the last reload: a disk plugged in or out changes what's searched.
+    private var watchedFolders: [String] = []
     /// When luoke-core may be asked for vectors again (it said when).
     private var vectorsAfter = Date.distantPast
     /// A change couldn't be synced (the index was busy): the folders are walked whole at the next look (review A-11).
@@ -201,33 +204,47 @@ public final class Resident: @unchecked Sendable {
         let indexer = Indexer(store: store, crawler: crawler)
         indexer.photos = library
         indexer.watchdog = watchdog
+        indexer.readFirst = Indexer.usualFirst()
         return indexer
+    }
+
+    /// The searched folders macOS doesn't let it list now, and the protected ones inside them (a searched home
+    /// folder's desktop, documents, downloads): one allowed since is walked again.
+    private func unreadable(_ folders: [String]) -> Set<String> {
+        Set(SearchService.accessTargets(folders, skipped: settings.skipFolders, home: NSHomeDirectory())
+            .filter { !SearchService.readable($0) })
     }
 
     private func reload() {
         guard !stopped else { return }
         resyncFolders = false
         settingsDate = Self.modified(directory.settingsFile)
-        guard let read = Settings.read(directory) else {
+        guard var read = Settings.read(directory) else {
             // Never taken for "nothing chosen": nothing is synced or removed until it can be read (review A-05).
             log("settings unreadable: left as they are")
             return
         }
+        // A chosen disk mounted at another path: followed there (the old path's items are pruned below).
+        if !read.volumes.isEmpty, (try? Settings.followDisks(directory, mounted: Volumes.external())) == true {
+            settingsDate = Self.modified(directory.settingsFile)
+            read = Settings.read(directory) ?? read
+        }
         settings = read
         let folders = settings.searched(restricted: restrictFolders).map(Crawler.canonical)
-        unreadableFolders = Set(folders.filter { !SearchService.readable($0) })
+        watchedFolders = folders
+        unreadableFolders = unreadable(folders)
         let indexer = indexer()
         try? indexer.noteStopped(directory)   // the file the process ended on last time, if it did
         do {
             // A walk of names and dates only: nothing is read here but new items (below).
             _ = try indexer.sync(folders)
-            _ = try indexer.prune(keeping: folders)
+            _ = try indexer.prune(keeping: settings.keptRoots(restricted: restrictFolders))
         } catch is CancellationError {
             return
         } catch {
             log("sync failed")
         }
-        watcher.ignoring = Self.ignored(skipping: settings.skipFolders)
+        watcher.ignoring = Self.ignored(skipping: settings.skipFolders, roots: folders)
         watcher.watch(folders)
         reloadPhotos()
         readNew()
@@ -349,7 +366,7 @@ public final class Resident: @unchecked Sendable {
         let folders = settings.searched(restricted: restrictFolders).map(Crawler.canonical)
         if resyncFolders || Self.modified(directory.settingsFile) != settingsDate
             || (settings.photos && photos != nil && photos?.access != photosAccess)
-            || Set(folders.filter { !SearchService.readable($0) }) != unreadableFolders {
+            || folders != watchedFolders || unreadable(folders) != unreadableFolders {
             reload()
             return
         }
@@ -431,17 +448,29 @@ public final class Resident: @unchecked Sendable {
     }
 
     /// Changes never worth waking for: inside packages (the Photos library's database, apps), developer folders,
-    /// `.noindex` folders, the user's skipped folders (review A-07).
-    static func ignored(skipping: [String]) -> (String) -> Bool {
+    /// `.noindex` folders, the user's skipped folders (review A-07); and, below the root a path belongs to, any folder
+    /// a walk wouldn't go into (`Rules.skipReason`): with the whole home folder watched, ~/Library's caches and app
+    /// data, ~/Music, tools' folders change all the time and would keep the first pass yielding.
+    static func ignored(skipping: [String], roots: [String] = [], home: String = NSHomeDirectory()) -> (String) -> Bool {
         let skipped = skipping.map(Crawler.canonical)
+        let roots = roots.map(Crawler.canonical)
+        let home = Crawler.canonical(home)
         let packages: Set<String> = ["photoslibrary", "app", "bundle", "framework", "noindex", "xcodeproj",
                                      "xcworkspace", "musiclibrary", "tvlibrary", "imovielibrary", "fcpbundle"]
         return { path in
             if skipped.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) { return true }
-            return path.split(separator: "/").dropLast().contains { part in
+            if path.split(separator: "/").dropLast().contains(where: { part in
                 Rules.skippedFolderNames.contains(String(part))
                     || packages.contains((part as NSString).pathExtension.lowercased())
+            }) { return true }
+            guard let root = FolderWatcher.innermost(path, roots) else { return false }
+            var folder = root
+            for part in path.dropFirst(root.count).split(separator: "/") {
+                folder += "/" + part
+                // The path itself too: a folder skipped whole (~/Library) changes as a path of its own.
+                if Rules.skipReason(folder: URL(fileURLWithPath: folder), home: home, excluded: []) != nil { return true }
             }
+            return false
         }
     }
 

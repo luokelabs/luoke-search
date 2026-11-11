@@ -7,12 +7,17 @@ final class Opened: @unchecked Sendable {
     private let lock = NSLock()
     private var _log: [String] = []
     var log: [String] { lock.withLock { _log } }
+    /// What the recorded reveal answers: false is Finder not showing it.
+    var revealWorks = true
 
     var opener: Opener {
         Opener(open: { [self] path, _, location in
                    lock.withLock { _log.append("open \((path as NSString).lastPathComponent) \(location?.page ?? -1)") }
                },
-               reveal: { [self] path in lock.withLock { _log.append("reveal \((path as NSString).lastPathComponent)") } },
+               reveal: { [self] path in
+                   lock.withLock { _log.append("reveal \((path as NSString).lastPathComponent)") }
+                   return revealWorks
+               },
                openURL: { [self] url in lock.withLock { _log.append("url \(url.absoluteString)") } })
     }
 }
@@ -137,6 +142,21 @@ extension ReadsPictures {
             #expect(agent.opened.log == ["open 发布会.pptx 2", "reveal 发布会.pptx"])
             let gone = agent.call("search_open", ["id": "999999"], tapped: "q-1")
             #expect((gone["structuredContent"] as? [String: Any])?["code"] as? String == "stale")
+        }
+
+        /// Finder not showing it is said, not covered by "已在访达中显示" (luoke-search#99).
+        @Test func revealThatDidntHappenSaysSo() throws {
+            let agent = try Agent()
+            let hits = try #require((agent.call("search_query", ["query": "团队版"])["structuredContent"]
+                                     as? [String: Any])?["hits"] as? [[String: Any]])
+            let id = try #require(hits.first?["id"] as? String)
+            agent.opened.revealWorks = false
+            let answer = agent.call("search_open", ["id": id, "reveal": true], tapped: "q-1")
+            #expect(answer["isError"] as? Bool == true)
+            #expect((answer["structuredContent"] as? [String: Any])?["code"] as? String == "failed")
+            let text = (answer["content"] as? [[String: Any]])?.first?["text"] as? String ?? ""
+            #expect(text.contains("没能在访达中显示"), "\(text)")
+            #expect(!text.contains("已在访达中显示"), "\(text)")
         }
 
         @Test func settingsChangeOnlyWithATapOnTheToolsOwnPlan() throws {

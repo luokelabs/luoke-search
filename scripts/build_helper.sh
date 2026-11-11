@@ -20,7 +20,7 @@
 # LUOKE_SEARCH_DEV_APP gives a program signed the same as a release one: nothing on it tells them apart. Only luoke-core's
 # build_app.sh decides it, by the bundle id it's building for.
 #
-# scripts/build_app.sh still builds 螺壳搜索.app, for as long as the release pipeline takes that.
+# This is the only build luoke-core's pipeline takes; it no longer takes the 螺壳搜索.app scripts/build_app.sh builds.
 set -eu
 out=${LUOKE_OUT:-}
 dev=${LUOKE_SEARCH_DEV_APP:-}

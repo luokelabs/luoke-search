@@ -25,11 +25,13 @@ public struct SearchOptions: Sendable {
 
 /// Finds items for a query: by words (FTS5, with the trigram table for Chinese and Japanese) and, when the query has
 /// a vector from luoke-core, by meaning, on one scale (digup's fusion, which beat reciprocal-rank fusion on its evals):
-/// - an item qualifies by standing out in meaning (z ≥ `zGate`, `VectorMatrix.meaning`) or by holding at least half
-///   of the query's words;
+/// - an item qualifies by standing out in meaning (z ≥ `zGate`, `VectorMatrix.meaning`, and close enough in plain
+///   cosine, `cosineFloor`) or by holding at least half of the query's words;
 /// - it scores its meaning z, plus 2 × (share of the words)^1.5, plus a little for words in its name and for ranking
 ///   high on them, plus 1 when it's the kind the query names. One common word can't beat a strong meaning match; all
-///   of an exact lookup's words usually do.
+///   of an exact lookup's words usually do;
+/// - what scores under half of the best is left out (`keptShare`), unless it holds all of the query's words: the weak
+///   tail of a good answer, and what only looks a bit like the question when nothing answers it.
 public final class Searcher {
     public let store: IndexStore
 
@@ -40,10 +42,61 @@ public final class Searcher {
     /// An item qualifies on words when it holds at least this share of them.
     static let minimumShare = 0.5
     /// An item qualifies on meaning when its best segment stands this many deviations above the rest of its
-    /// modality — or this many, when it's of a kind the query names ("播客里讲失眠的那段"): a recording has no words
-    /// to be found by, and among a few recordings the right one rarely stands out by two.
+    /// modality — or this many, when it's a recording and the query names its kind ("播客里讲失眠的那段"): a
+    /// recording has no words to be found by, and among a few recordings the right one rarely stands out by two.
+    /// Not for pictures: a library has many, and "护照照片" let every photo one deviation up in (2026-11-09).
     static let zGate = 2.0
     static let kindGate = 1.0
+    static let kindGateKinds: Set<ItemKind> = [.audio, .video]
+    /// …and when its cosine to the query is at least this, in the vector space it was measured in. z is relative:
+    /// something always stands out, so a question nothing answers still found the photos least unlike it. Measured
+    /// 2026-11-09 on 176 synthetic questions (`evals/photo-relevance.json`, `same-topic.json`, the zh sets): the right
+    /// hits found by meaning only start at 0.632, the wrong ones' median is 0.63. Another vector space has no floor
+    /// until it's measured.
+    static let cosineFloors: [String: Double] = ["embeddinggemma-2/1": 0.62]
+    /// Hits scoring under this share of the best are left out, unless they hold all of the query's words.
+    static let keptShare = 0.5
+    /// A result answers the question for sure (`Hit.strong`) on its own, not by its place in the list, so the window
+    /// can set it beside other apps' sure results: all of the query's words in its name, or its best segment standing
+    /// out (z ≥ `zGate`) and this close in cosine, by modality. Measured 2026-11-09 on the 176 synthetic questions
+    /// (`evals/README.md`「很有把握」): of the results so marked 83% are answers (by "at least half the top score",
+    /// 43%), 92 of 128 questions with an answer have one among them, 3 of 48 without an answer have any. Another
+    /// vector space has none until it's measured: only names make a result sure there.
+    static let strongCosines: [String: [String: Double]] = ["embeddinggemma-2/1": ["text": 0.72, "image": 0.70,
+                                                                                    "audio": 0.74]]
+
+    /// The share of the query's words in an item's own name: a file's name without its extension, a Photos item's
+    /// title. Found in the name segment (`IndexStore`), which also holds the folders above it and the extension,
+    /// and there in the name itself: a folder's name or "md" doesn't make every file in it sure (review of #105).
+    /// A name kept percent-encoded counts as results show it too (`Names.display`, #113).
+    static func nameShare(_ query: Query, found: Set<Int>, required: Set<Int>, item: ItemInfo) -> Double {
+        let names: [String]
+        if item.source == "photos" {
+            guard let title = item.title else { return 0 }   // "照片", "视频" are what we call it, not a name
+            names = [title]   // shown as it is (`ItemInfo.name`)
+        } else {
+            let file = (item.path as NSString).lastPathComponent
+            names = [file, Names.display(file)]
+        }
+        let stems = Set(names.map { ($0 as NSString).deletingPathExtension })
+        let counted = required.isEmpty ? Set(query.terms.indices) : required
+        guard !counted.isEmpty else { return 0 }
+        let inName = found.intersection(counted).filter { index in
+            stems.contains { $0.range(of: query.terms[index].text, options: [.caseInsensitive, .widthInsensitive]) != nil }
+        }
+        return Double(inName.count) / Double(counted.count)
+    }
+
+    static func isStrong(_ signals: Hit.Signals?, space: String?) -> Bool {
+        guard let signals else { return false }
+        if signals.nameShare >= 1 { return true }
+        guard let z = signals.z, let cosine = signals.cosine, let modality = signals.modality,
+              let bar = space.flatMap({ strongCosines[$0]?[modality] }) else { return false }
+        return z >= zGate && cosine >= bar
+    }
+
+    /// Off only for `eval --no-cutoff`, to measure what the floor and the half cut leave out.
+    public var cutsWeakHits = true
 
     /// How meaning is scored; only `eval --scoring` changes it.
     public var meaningScale: MeaningScale = .pooled
@@ -112,12 +165,14 @@ public final class Searcher {
         // Meaning: every vector on this query's scale; each item keeps its best segment.
         var note = meaningNote
         var best: [Int64: (z: Double, segment: Int64, modality: String)] = [:]
-        var cosines: [Int64: Double] = [:]
+        var cosines: [Int64: Double] = [:]   // each item's best-z segment's: the signal the floor was chosen on
+        var floor = -Double.infinity
         if let meaning {
             let space = try store.vectorSpace
             if space != nil, meaning.space != nil, space != meaning.space {
                 note = "螺壳换了向量，正在重算，这次只按字词搜"
             } else {
+                floor = try cosineFloor()
                 let matrix = try vectors()
                 let raw = matrix.scores(meaning.vector)
                 let z = VectorMatrix.meaning(raw, modalities: matrix.rows.map(\.modality), scale: meaningScale)
@@ -138,8 +193,9 @@ public final class Searcher {
         let gate = query.kindHints.isEmpty ? Self.zGate : Self.kindGate
         for (item, value) in best where value.z >= gate { ids.insert(item) }
         let items = try itemInfo(Array(ids))
-        var scored: [(item: Int64, score: Double)] = []
+        var scored: [(item: Int64, score: Double, from: ItemSource)] = []
         var shares: [Int64: Double] = [:]
+        var nameShares: [Int64: Double] = [:]
         var totals = Self.noTotals
         for id in ids {
             guard let item = items[id], allowed(item, options, bySource: false) else { continue }
@@ -149,41 +205,50 @@ public final class Searcher {
                 : Double(foundRequired) / Double(required.count)
             let optionalBonus = required.isEmpty ? 0 : min(0.3, 0.1 * Double(candidate.terms.count - foundRequired))
             let z = best[id]?.z ?? 0
-            guard share >= Self.minimumShare || z >= (query.kindHints.contains(item.kind) ? Self.kindGate : Self.zGate)
+            guard share >= Self.minimumShare || (z >= meaningGate(item.kind, query) && (cosines[id] ?? 0) >= floor)
             else { continue }
-            totals[item.from.rawValue, default: 0] += 1
-            guard options.sources?.contains(item.from) ?? true else { continue }
             shares[id] = share
+            nameShares[id] = Self.nameShare(query, found: candidate.nameTerms, required: required, item: item)
             var score = meaningWeight * max(z, 0) + wordWeight * pow(share, 1.5) + optionalBonus
             score += Self.nameWeight * min(1, Double(candidate.nameTerms.count) / termCount)
             score += Self.orderWeight * candidate.order / Double(max(candidate.terms.count, 1))
             if query.kindHints.contains(item.kind) { score += Self.kindBonus }
-            scored.append((id, score))
+            scored.append((id, score, item.from))
         }
         scored.sort { $0.score > $1.score || ($0.score == $1.score && $0.item < $1.item) }
+        // Under half of the best is left out: the best of every source, so each source's count is what its own list
+        // shows, and one still there (a file gone since isn't listed, so it sets no bar). Only when meaning was used:
+        // the cut was measured with it, and words alone score on another scale.
+        let meaningUsed = meaning != nil && note == nil
+        if cutsWeakHits, meaningUsed,
+           let top = scored.first(where: { entry in items[entry.item].map(Self.isThere) ?? false })?.score, top > 0 {
+            scored.removeAll { $0.score < top * Self.keptShare && (shares[$0.item] ?? 0) < 1 }
+        }
+        for entry in scored { totals[entry.from.rawValue, default: 0] += 1 }
+        scored.removeAll { !(options.sources?.contains($0.from) ?? true) }
 
         var hits: [Hit] = []
-        for (id, score) in scored {
+        for (id, score, _) in scored {
             guard hits.count < options.limit, let item = items[id] else { break }
-            if item.source == "file", !FileManager.default.fileExists(atPath: item.path) { continue }
+            if !Self.isThere(item) { continue }
             var hit = try hit(item, candidates[id], meaning: best[id], score: score, query: query)
             hit.signals = Hit.Signals(z: best[id]?.z, cosine: cosines[id], modality: best[id]?.modality,
-                                      share: shares[id] ?? 0)
+                                      share: shares[id] ?? 0, nameShare: nameShares[id] ?? 0)
             hits.append(hit)
         }
-        if let top = hits.first?.score, top > 0 {
-            for index in hits.indices { hits[index].strong = hits[index].score >= top * 0.5 }
-        }
+        let space = try store.vectorSpace
+        for index in hits.indices { hits[index].strong = Self.isStrong(hits[index].signals, space: space) }
 
         // Nothing but kind words ("截图", "录音") and nothing found by meaning: the newest of those kinds. Found from
         // another source than the filter asks is found: the filter emptying the list doesn't make it another search.
-        if query.terms.isEmpty, !query.kindHints.isEmpty, hits.isEmpty, totals.values.allSatisfy({ $0 == 0 }) {
+        // "猫的照片" isn't that: nothing found is nothing found, not the newest photos.
+        if query.onlyKindWords, !query.kindHints.isEmpty, hits.isEmpty, totals.values.allSatisfy({ $0 == 0 }) {
             let kinds = options.kinds.map { $0.intersection(query.kindHints) } ?? query.kindHints
             hits = try newest(of: kinds, options: options)
             totals = try newestTotals(of: kinds, options: options)
         }
 
-        let reason = try partialReason(meaningUsed: meaning != nil && note == nil, note: note)
+        let reason = try partialReason(meaningUsed: meaningUsed, note: note)
         // Nothing found: certainly not. Something found: unknown until there is a refusal threshold (review B-11).
         return SearchAnswer(hits: hits, partial: reason != nil, partialReason: reason, confident: hits.isEmpty ? false : nil,
                             tookMs: Int(Date().timeIntervalSince(started) * 1000), totals: totals)
@@ -195,7 +260,9 @@ public final class Searcher {
     /// gives the part's vectors (the whole item's when it names none, or that part has none), and every other item is
     /// scored by its closest segment, its z taken among the other items (a search takes it among segments). Only
     /// vectors already in the index: luoke-core isn't
-    /// asked. Items that stand no higher than the rest (z ≤ 0) aren't listed; `strong` is the search's meaning gate.
+    /// asked. Items that stand no higher than the rest (z ≤ 0), or are further than the search's `cosineFloor`, aren't
+    /// listed; `strong` is the search's meaning gate. (Item against item, folders of one topic measured 2026-11-09:
+    /// the floor keeps 99% of what shares the item's folder and drops 30% of the rest.)
     /// Nil: no such item.
     public func similar(to id: String, options: SearchOptions = SearchOptions(), started: Date = Date()) throws
         -> SearchAnswer? {
@@ -228,9 +295,10 @@ public final class Searcher {
         }
         let others = Array(closest)
         let z = VectorMatrix.meaning(others.map(\.value.cosine), modalities: others.map(\.value.modality), scale: meaningScale)
+        let floor = try cosineFloor()
         var best: [Int64: (z: Double, segment: Int64, modality: String)] = [:]
         var cosines: [Int64: Double] = [:]
-        for (index, other) in others.enumerated() where z[index] > 0 {
+        for (index, other) in others.enumerated() where z[index] > 0 && Double(other.value.cosine) >= floor {
             best[other.key] = (z[index], other.value.segment, other.value.modality)
             cosines[other.key] = Double(other.value.cosine)
         }
@@ -282,6 +350,25 @@ public final class Searcher {
         try store.db.query("SELECT DISTINCT item FROM segments WHERE vec IS NOT NULL AND item IN (" + marks + ")",
                            items.map { .int($0) }) { found.insert($0.int(0)) }
         return found
+    }
+
+    /// The z an item of this kind needs to qualify on meaning for this query. Without the cut, as before it: any
+    /// kind the query names gets `kindGate`.
+    func meaningGate(_ kind: ItemKind, _ query: Query) -> Double {
+        guard query.kindHints.contains(kind) else { return Self.zGate }
+        return !cutsWeakHits || Self.kindGateKinds.contains(kind) ? Self.kindGate : Self.zGate
+    }
+
+    /// The cosine a meaning match needs in the index's vector space; none (-∞) where it hasn't been measured, or
+    /// without the cut.
+    func cosineFloor() throws -> Double {
+        guard cutsWeakHits, let space = try store.vectorSpace else { return -.infinity }
+        return Self.cosineFloors[space] ?? -.infinity
+    }
+
+    /// A Photos item, or a file still where the index has it.
+    static func isThere(_ item: ItemInfo) -> Bool {
+        item.source != "file" || FileManager.default.fileExists(atPath: item.path)
     }
 
     /// Why results may be incomplete, the most important reason first.
@@ -366,7 +453,7 @@ public final class Searcher {
                 hits.append(Hit(id: String(info.id), kind: info.kind,
                                 title: Secrets.mask(info.name), path: info.source == "file" ? info.path : nil,
                                 where: nil, date: JSONOutput.date(row.double(4)), snippet: nil,
-                                why: why, score: 0, strong: true))
+                                why: why, score: 0, strong: false))   // a listing, not an answer
             }
             if rows < page { break }
             offset += page
@@ -456,9 +543,11 @@ public final class Searcher {
         let date: Double
         var title: String? = nil
 
-        /// What results call it: a file's name; a Photos item's original file name, else "照片" or "视频".
+        /// What results call it: a file's name (decoded if it was kept percent-encoded: `Names.display`); a Photos
+        /// item's original file name, else "照片" or "视频".
         var name: String {
-            source == "photos" ? title ?? (kind == .video ? "视频" : "照片") : (path as NSString).lastPathComponent
+            source == "photos" ? title ?? (kind == .video ? "视频" : "照片")
+                : Names.display((path as NSString).lastPathComponent)
         }
 
         var from: ItemSource { source == "photos" ? .photos : .files }
@@ -619,6 +708,34 @@ public final class Searcher {
     /// when the sheet's first row names them: "「十月开支」日期：10-05，项目：物业费，金额（元）：420". A sheet is its
     /// name, then rows of tab-separated cells (`Office.xlsx`); a later part of a long one starts with neither.
     static func sheetSnippet(_ text: String, terms: [String], length: Int = 160) -> String? {
+        guard let sheet = sheetRows(text) else { return nil }
+        let matching = sheet.rows.indices.filter { at in
+            let cells = sheet.rows[at].map(Folded.init)
+            return terms.contains { term in cells.contains { $0.find(term) != nil } }
+        }
+        let shown = (matching.isEmpty ? Array(sheet.rows.indices) : matching).prefix(2).map { at -> String in
+            sheet.shown[at].enumerated().filter { !$0.element.isEmpty }.map { index, value in
+                guard let header = sheet.header, index < header.count, !header[index].isEmpty else { return value }
+                return header[index] + "：" + value
+            }.joined(separator: "，")
+        }
+        var piece = Secrets.mask((sheet.name.map { "「\($0)」" } ?? "") + shown.joined(separator: "；"))
+        if piece.count > length { piece = String(piece.prefix(length - 1)) + "…" }
+        return piece
+    }
+
+    /// A worksheet's text laid out as a table: its name, the columns' names if its first rows have them, and its rows
+    /// as written (`rows`) and with the credential cells masked (`shown`, row for row): a password's column whole
+    /// (pre-release review, must-fix 4), a cell after a label. Nil for a sheet with no rows. `Secrets.mask` over what
+    /// is shown is the caller's.
+    struct SheetRows {
+        var name: String?
+        var header: [String]?
+        var rows: [[String]]
+        var shown: [[String]]
+    }
+
+    static func sheetRows(_ text: String) -> SheetRows? {
         var rows = text.split(whereSeparator: \.isNewline).map { $0.split(separator: "\t", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) } }
         var name: String?, header: [String]?
@@ -646,21 +763,13 @@ public final class Searcher {
                 return !cells.isEmpty && like * 5 >= cells.count * 3 ? "password" : nil
             }
         }
-        let matching = rows.filter { row in
-            let cells = row.map(Folded.init)
-            return terms.contains { term in cells.contains { $0.find(term) != nil } }
+        let shown = rows.map { row in
+            Self.labelled(row).enumerated().map { index, cell in
+                guard !cell.isEmpty, index < columns.count, let kind = columns[index] else { return cell }
+                return Self.masked(cell, kind: kind)
+            }
         }
-        let shown = (matching.isEmpty ? rows : matching).prefix(2).map { row -> String in
-            // A password's column masked whole (pre-release review, must-fix 4).
-            Self.labelled(row).enumerated().filter { !$0.element.isEmpty }.map { index, cell in
-                let value = index < columns.count ? columns[index].map { Self.masked(cell, kind: $0) } ?? cell : cell
-                guard let header, index < header.count, !header[index].isEmpty else { return value }
-                return header[index] + "：" + value
-            }.joined(separator: "，")
-        }
-        var piece = Secrets.mask((name.map { "「\($0)」" } ?? "") + shown.joined(separator: "；"))
-        if piece.count > length { piece = String(piece.prefix(length - 1)) + "…" }
-        return piece
+        return SheetRows(name: name, header: header, rows: rows, shown: shown)
     }
 
     /// A row with the cell after a label ("WiFi 密码", "Password"; empty cells between skipped) masked whole:

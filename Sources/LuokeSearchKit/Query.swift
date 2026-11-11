@@ -17,6 +17,9 @@ public struct Query: Sendable, Equatable {
     public let original: String
     public let terms: [Term]
     public let kindHints: Set<ItemKind>
+    /// Nothing but kind words and function words ("截图", "那段录音"); "猫的照片" has a word, though "猫" alone
+    /// isn't a term.
+    public let onlyKindWords: Bool
 
     /// The terms an item's share of the query's words is counted against.
     public var countedTerms: Int {
@@ -44,6 +47,7 @@ public struct Query: Sendable, Equatable {
         var terms: [Term] = []
         var seen = Set<String>()
         var singles: [String] = []   // characters on their own, kept for a one-character query
+        var content = false          // a single character that isn't a function or kind word
         var run = "", runEnd: String.Index?
         func flush() {
             if run.count >= 2, seen.insert(run).inserted {
@@ -67,7 +71,10 @@ public struct Query: Sendable, Equatable {
                 if Self.singleStops.contains(word) || Self.kindWords[word] != nil || runEnd != range.lowerBound {
                     flush()
                 }
-                if !Self.singleStops.contains(word) && Self.kindWords[word] == nil { run += word }
+                if !Self.singleStops.contains(word) && Self.kindWords[word] == nil {
+                    run += word
+                    content = true
+                }
                 runEnd = range.upperBound
                 if let kind = Self.kindWords[word] { hints.insert(kind) }
                 continue
@@ -98,6 +105,7 @@ public struct Query: Sendable, Equatable {
         // "照片" means pictures in folders and the Photos library's photos alike.
         if hints.contains(.image) { hints.insert(.photo) }
         kindHints = hints
+        onlyKindWords = self.terms.isEmpty && !content
     }
 
     /// The query's words with where they are. Chinese and Japanese are split into words by the system's tokenizer

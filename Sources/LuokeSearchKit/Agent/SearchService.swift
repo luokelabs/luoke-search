@@ -4,14 +4,15 @@ import Foundation
 /// How results are opened on the Mac. Tests swap it for one that only records.
 public struct Opener: Sendable {
     public var open: @Sendable (_ path: String, _ kind: ItemKind, _ location: Location?) -> Void
-    public var reveal: @Sendable (_ path: String) -> Void
+    /// Shows the file selected in a Finder window; false when that didn't happen.
+    public var reveal: @Sendable (_ path: String) -> Bool
     public var openURL: @Sendable (_ url: URL) -> Void
     /// Only pretends (`dry`): nothing at all is opened, Photos included (review C-18), and what's said about it ends
     /// with "（演习）", so nobody takes it for the real thing.
     public var isDry = false
 
     public init(open: @escaping @Sendable (String, ItemKind, Location?) -> Void,
-                reveal: @escaping @Sendable (String) -> Void, openURL: @escaping @Sendable (URL) -> Void,
+                reveal: @escaping @Sendable (String) -> Bool, openURL: @escaping @Sendable (URL) -> Void,
                 isDry: Bool = false) {
         self.open = open
         self.reveal = reveal
@@ -27,7 +28,7 @@ public struct Opener: Sendable {
             if let time = location?.time, kind == .video || kind == .audio, quickTime(url, at: time) { return }
             NSWorkspace.shared.open(url)
         },
-        reveal: { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: $0)]) },
+        reveal: { finderReveal($0) },
         openURL: { NSWorkspace.shared.open($0) })
 
     /// Only says what it would open, on stderr: development runs and agent checks (`LUOKE_SEARCH_OPENER=dry`).
@@ -35,7 +36,7 @@ public struct Opener: Sendable {
         open: { path, kind, location in
             FileHandle.standardError.write(Data("luoke-search (dry): open \(kind.rawValue) \(path) \(location.map { "\($0)" } ?? "")\n".utf8))
         },
-        reveal: { FileHandle.standardError.write(Data("luoke-search (dry): reveal \($0)\n".utf8)) },
+        reveal: { FileHandle.standardError.write(Data("luoke-search (dry): reveal \($0)\n".utf8)); return true },
         openURL: { FileHandle.standardError.write(Data("luoke-search (dry): open \($0)\n".utf8)) },
         isDry: true)
 
@@ -45,6 +46,35 @@ public struct Opener: Sendable {
     }
 
     static let quickTimeWait: TimeInterval = 5
+
+    /// Shows `path` selected in Finder with `open -R`, and says whether it did. Not `NSWorkspace`'s
+    /// `activateFileViewerSelecting`: called off the main thread, which is where the resident serves the agent's
+    /// socket, it does nothing at all and says nothing (luoke-search#99). `open` works from any thread and has an exit
+    /// status: 1 when the file isn't there. Finder may stay behind the app the user is in: only the app in front
+    /// can bring another one forward.
+    static func finderReveal(_ path: String, executable: String = "/usr/bin/open", wait: TimeInterval = revealWait) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = ["-R", path]
+        return succeeds(process, within: wait)
+    }
+
+    static let revealWait: TimeInterval = 5
+
+    /// Runs `process` with its output dropped and says whether it exited 0 within `wait` seconds; stopped if not.
+    /// This runs under the server's lock (`MCPServer`): the agent's next call waits that long at most.
+    static func succeeds(_ process: Process, within wait: TimeInterval) -> Bool {
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return false }
+        let deadline = Date().addingTimeInterval(wait)
+        while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+        if process.isRunning {
+            process.terminate()
+            return false
+        }
+        return process.terminationStatus == 0
+    }
 
     /// The AppleScript `quickTime` runs: the path inside its quotes with its backslashes and quotes escaped.
     static func quickTimeScript(_ url: URL, at seconds: Double) -> String {
@@ -68,18 +98,9 @@ public struct Opener: Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = ["-e", script]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch { return false }
         // The first time, macOS asks whether QuickTime Player may be controlled: not waited for past a few seconds
         // (the agent's call would time out meanwhile), the file is opened plainly instead (review C-12).
-        let deadline = Date().addingTimeInterval(quickTimeWait)
-        while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
-        if process.isRunning {
-            process.terminate()
-            return false
-        }
-        return process.terminationStatus == 0
+        return succeeds(process, within: quickTimeWait)
     }
 
     /// Names the descriptor luoke's own program left open for this one to ask it for things. Set by that program, so
@@ -176,6 +197,8 @@ public final class SearchService: @unchecked Sendable {
     public var judgesAccess = false
     /// Whether macOS lets the searched folders be read, for the outbox (`folderItems`).
     var folderAccess = FolderAccess()
+    /// The disks plugged in now that the page may offer (`Volumes.external`; swapped in tests).
+    var mountedVolumes: () -> [MountedVolume] = Volumes.external
 
     /// The Photos library this process may read, if any (`SystemPhotos.current`; a fake in tests).
     public let photos: PhotoSource?
@@ -338,7 +361,7 @@ public final class SearchService: @unchecked Sendable {
         }
         let name = Secrets.mask((target.path as NSString).lastPathComponent)
         if reveal {
-            opener.reveal(target.path)
+            guard opener.reveal(target.path) else { throw ToolFailure("failed", "没能在访达中显示 \(name)。") }
             return "已在访达中显示 \(name)。"
         }
         opener.open(target.path, target.kind, target.location)
@@ -485,6 +508,10 @@ public final class SearchService: @unchecked Sendable {
         public var addFolders: [String] = []
         public var removeFolders: [String] = []
         public var skipFolders: [String] = []
+        public var unskipFolders: [String] = []
+        /// Disks by UUID: only ones plugged in now (`mountedVolumes`) may be added.
+        public var addVolumes: [String] = []
+        public var removeVolumes: [String] = []
         public var photos: Bool?
         public var onBattery: Bool?
 
@@ -514,7 +541,8 @@ public final class SearchService: @unchecked Sendable {
 
     public func plan(_ change: Change) throws -> (SettingsPlan, [PlanLine]) {
         guard let settings = Settings.read(directory) else { throw ToolFailure("needs_setup", Settings.unreadable) }
-        for names in [change.addFolders, change.removeFolders, change.skipFolders] {
+        for names in [change.addFolders, change.removeFolders, change.skipFolders, change.unskipFolders,
+                      change.addVolumes, change.removeVolumes] {
             guard names.count <= Self.maxFoldersInChange else {
                 throw ToolFailure("invalid", "一次最多改 \(Self.maxFoldersInChange) 个文件夹。")
             }
@@ -547,15 +575,30 @@ public final class SearchService: @unchecked Sendable {
                                       path: folder))
             }
         }
+        let disks = settings.volumes.isEmpty ? [] : Volumes.roots(settings.volumes, mounted: mountedVolumes())
         for name in change.removeFolders {
-            let folder = Settings.folder(named: name, home: home)
-            guard settings.folders.contains(folder) else { continue }
+            // As stored first: one kept unlike the walk spells it (a link, written by an earlier version) still goes.
+            let folder = settings.folders.contains(name) ? name : Settings.folder(named: name, home: home)
+            // A disk chosen on the page, named by where it is (or was): it goes by its UUID.
+            if !settings.folders.contains(folder),
+               let disk = settings.volumes.first(where: { volume in
+                   ([volume.path] + Volumes.roots([volume], mounted: mountedVolumes())).contains(folder)
+               }) {
+                if !plan.removeVolumes.contains(disk.uuid) {
+                    plan.removeVolumes.append(disk.uuid)
+                    lines.append(PlanLine("不再搜外接盘「\(quietName(disk.path))」：它的内容会移出索引", path: disk.path))
+                }
+                continue
+            }
+            guard settings.folders.contains(folder), !plan.removeFolders.contains(folder) else { continue }
             plan.removeFolders.append(folder)
-            lines.append(PlanLine("不再搜「\(display(folder))」：它的内容会移出索引", path: folder))
+            // Not by Finder's name: it may look inside a folder macOS protects, and ask the user (review C-09).
+            lines.append(PlanLine("不再搜「\(quietName(folder))」：它的内容会移出索引", path: folder))
         }
         // What's searched once this plan is carried out: the app as it ships skips only what's inside it. Compared
         // as the walk spells them (links followed: "documents" isn't, a typed path is).
-        let searched = (settings.folders.filter { !plan.removeFolders.contains($0) } + plan.addFolders).map(Crawler.canonical)
+        let searched = (settings.folders.filter { !plan.removeFolders.contains($0) } + plan.addFolders + disks)
+            .map(Crawler.canonical)
         for name in change.skipFolders {
             let folder = Settings.folder(named: name, home: home)
             guard !settings.skipFolders.contains(folder) else { continue }
@@ -564,7 +607,33 @@ public final class SearchService: @unchecked Sendable {
                 throw ToolFailure("invalid", "只能跳过要搜的文件夹里面的：「\(MCPServer.shown(name))」不在要搜的文件夹里。")
             }
             plan.skipFolders.append(folder)
-            lines.append(PlanLine("跳过「\(display(folder))」", path: folder))
+            // Not by Finder's name: it may look inside a folder macOS protects (review C-09).
+            lines.append(PlanLine("跳过「\(quietName(folder))」", path: folder))
+        }
+        for name in change.unskipFolders {
+            let folder = settings.skipFolders.contains(name) ? name : Settings.folder(named: name, home: home)
+            guard settings.skipFolders.contains(folder), !plan.unskipFolders.contains(folder) else { continue }
+            plan.unskipFolders.append(folder)
+            lines.append(PlanLine("不再跳过「\(quietName(folder))」", path: folder))
+        }
+        if !change.addVolumes.isEmpty || !change.removeVolumes.isEmpty {
+            let mounted = mountedVolumes()
+            for uuid in change.addVolumes where !settings.volumes.contains(where: { $0.uuid == uuid })
+                && !plan.addVolumes.contains(where: { $0.uuid == uuid }) {
+                // Only a disk plugged in now, as the page offered it: a UUID alone says nothing of where it is.
+                guard let disk = mounted.first(where: { $0.uuid == uuid }) else {
+                    throw ToolFailure("invalid", "这块盘现在没接在这台 Mac 上。")
+                }
+                plan.addVolumes.append(ChosenVolume(uuid: uuid, path: disk.path))
+                lines.append(PlanLine("也搜外接盘「\(Secrets.mask(disk.name))」：第一遍在后台慢慢读（macOS 会先问你让不让读）",
+                                      path: disk.path))
+            }
+            for uuid in change.removeVolumes {
+                guard let disk = settings.volumes.first(where: { $0.uuid == uuid }), !plan.removeVolumes.contains(uuid)
+                else { continue }
+                plan.removeVolumes.append(uuid)
+                lines.append(PlanLine("不再搜外接盘「\(quietName(disk.path))」：它的内容会移出索引", path: disk.path))
+            }
         }
         if let photos = change.photos, photos != settings.photos {
             plan.photos = photos
@@ -592,8 +661,11 @@ public final class SearchService: @unchecked Sendable {
     /// What a plan does, said again (when its card is drawn again).
     func describe(_ plan: SettingsPlan) -> [PlanLine] {
         plan.addFolders.map { PlanLine("搜「\(display($0))」", path: $0) }
-            + plan.removeFolders.map { PlanLine("不再搜「\(display($0))」", path: $0) }
-            + plan.skipFolders.map { PlanLine("跳过「\(display($0))」", path: $0) }
+            + plan.removeFolders.map { PlanLine("不再搜「\(quietName($0))」", path: $0) }
+            + plan.skipFolders.map { PlanLine("跳过「\(quietName($0))」", path: $0) }
+            + plan.unskipFolders.map { PlanLine("不再跳过「\(quietName($0))」", path: $0) }
+            + plan.addVolumes.map { PlanLine("也搜外接盘「\(quietName($0.path))」", path: $0.path) }
+            + plan.removeVolumes.map { uuid in PlanLine("不再搜一块外接盘", path: plan.basis.volumes.first { $0.uuid == uuid }?.path) }
             + (plan.photos.map { [PlanLine($0 ? "也搜「照片」里的照片和视频" : "不再搜「照片」")] } ?? [])
             + (plan.onBattery.map { [Self.batteryLine($0)] } ?? [])
     }
@@ -614,11 +686,21 @@ public final class SearchService: @unchecked Sendable {
         // macOS asks the user and the call waits for the answer, and the resident loop and a job would wait with it
         // (review of the setup card). Only for a plan that would be carried out: a stale one says so instead.
         let before = ToolState.load(directory)
+        // The places macOS protects inside a folder added (the desktop, documents and downloads in the home folder):
+        // looked at now, so macOS asks on this tap, not later in the background when the resident walks there. Not
+        // a reason to refuse: one not allowed gets its needs-access card, the rest is searched.
+        if let offered = before.plans.first(where: { $0.id == planID }), usable(offered, before),
+           let plan = offered.ticked(ticks), let settings = Settings.read(directory) {
+            for place in Self.accessTargets(plan.addFolders, skipped: settings.skipFolders, home: home)
+            where !plan.addFolders.contains(place) && FileManager.default.fileExists(atPath: place) {
+                _ = Self.readable(place)
+            }
+        }
         if let offered = before.plans.first(where: { $0.id == planID }), usable(offered, before),
            let plan = offered.ticked(ticks), let settings = Settings.read(directory),
            plan.fits(settings, saved: Settings.saved(directory)),
            !restrictFolders || plan.addFolders.allSatisfy({ Settings.searchable($0, home: home) }),
-           let unreadable = plan.addFolders.first(where: { !Self.readable($0) }) {
+           let unreadable = (plan.addFolders + plan.addVolumes.map(\.path)).first(where: { !Self.readable($0) }) {
             // The plan stays, drawn again with what to do first and the way there (review C-13); its ticks as
             // the user left them.
             let note = "macOS 现在不让\(LuokeSearch.holder)读「\(placeName(unreadable))」：在系统设置里允许以后，再点「好」。"
@@ -659,23 +741,46 @@ public final class SearchService: @unchecked Sendable {
             if !applied.photos { state.photosNeeded = false }
             // Folders no longer searched let go, so chosen again (before the outbox was looked at) is a new item. Only
             // that: whether macOS lets a folder be read is judged by the resident (`judgesAccess`).
-            let searched = Set(applied.searched(restricted: restrictFolders, home: home))
+            let searched = Set(Self.accessTargets(applied.searched(restricted: restrictFolders, home: home,
+                                                                   mounted: mountedVolumes()),
+                                                  skipped: applied.skipFolders, home: home))
             state.folderItems = state.folderItems.filter { searched.contains($0.key) }
             try state.save(directory)
             return (plan, applied)
         }
         defer { onSettingsChanged?() }
-        if !plan.removeFolders.isEmpty {
-            try Indexer(store: store).prune(keeping: applied.folders)
+        if !plan.removeFolders.isEmpty || !plan.removeVolumes.isEmpty {
+            try Indexer(store: store).prune(keeping: applied.keptRoots(restricted: restrictFolders, home: home, mounted: mountedVolumes()))
         }
-        return "好了，设置改好了。" + (plan.addFolders.isEmpty ? "" : "新加的文件夹会在后台慢慢建索引。")
+        return "好了，设置改好了。" + (plan.addFolders.isEmpty && plan.addVolumes.isEmpty ? "" : "新加的地方会在后台慢慢建索引。")
     }
 
     /// A folder as the user knows it: Finder's name for it ("桌面", "文稿" for the usual places), else its last part;
     /// credentials in it masked, as a file's title is (pre-release review: "身份证 110101199003070017 资料" went out
     /// whole in plans, cards and the outbox).
     func display(_ folder: String) -> String {
-        Secrets.mask(FileManager.default.displayName(atPath: folder))
+        special(folder) ?? Secrets.mask(FileManager.default.displayName(atPath: folder))
+    }
+
+    /// The home folder and iCloud Drive by what the user calls them: Finder would give the home folder the user's
+    /// short name.
+    func special(_ folder: String) -> String? {
+        switch inHome(folder) {
+        case "": "个人文件夹"
+        // iCloud Drive's own folder too: luoke's activation may choose only that one.
+        case Settings.iCloudDrive, Settings.iCloudDrive + "/com~apple~CloudDocs": "iCloud 云盘"
+        default: nil
+        }
+    }
+
+    /// Where `folder` is in the home folder ("" for the home folder itself), the home folder spelled either way (as
+    /// given, or as the walk spells it); nil outside it.
+    func inHome(_ folder: String) -> String? {
+        for base in [home, Crawler.canonical(home)] {
+            if folder == base { return "" }
+            if folder.hasPrefix(base + "/") { return String(folder.dropFirst(base.count + 1)) }
+        }
+        return nil
     }
 
     static func readable(_ folder: String) -> Bool {
@@ -728,18 +833,19 @@ public final class SearchService: @unchecked Sendable {
 
     /// The usual places by the names Finder gives them: asking Finder (`displayName`) may look inside them, and
     /// macOS would ask the user before the card is even shown. Any other folder by `display`.
-    static let placeNames = ["Desktop": "桌面", "Documents": "文稿", "Downloads": "下载"]
+    static let placeNames = ["Desktop": "桌面", "Documents": "文稿", "Downloads": "下载", "Pictures": "图片", "Movies": "影片",
+                             "Music": "音乐", "Public": "公共"]
 
     func placeName(_ folder: String) -> String {
-        Self.placeNames.first { home + "/" + $0.key == folder }?.value ?? display(folder)
+        inHome(folder).flatMap { Self.placeNames[$0] } ?? display(folder)
     }
 
-    /// The usual places offered when nothing's chosen yet (`needs-setup`): the desktop, documents and downloads
-    /// folders that are there and searchable. Only by the app as it ships (`restrictFolders`): a development run's
-    /// home is the developer's own, with real files in it.
+    /// What's offered when nothing's chosen yet (`needs-setup`): the home folder and iCloud Drive (11-10: the whole
+    /// home folder by default), those that are there. Only by the app as it ships (`restrictFolders`): a development
+    /// run's home is the developer's own, with real files in it.
     func suggestedFolders() -> [String] {
         guard restrictFolders else { return [] }
-        return ["Desktop", "Documents", "Downloads"].map { home + "/" + $0 }.filter { folder in
+        return Settings.homeScope(home: home).filter { folder in
             var isFolder: ObjCBool = false
             return FileManager.default.fileExists(atPath: folder, isDirectory: &isFolder) && isFolder.boolValue
                 && Settings.searchable(folder, home: home)
@@ -807,18 +913,19 @@ public final class SearchService: @unchecked Sendable {
             try? ToolState.update(directory) { $0.chose() }
         }
         if let plan = setupPlan() {
-            let names = plan.addFolders.map { "「\(placeName($0))」" }.joined(separator: "、")
+            let names = plan.addFolders.map { "「\(placeName($0))」" }.joined(separator: "和")
             items.append([
                 "id": Self.setupID, "kind": "needs-setup", "urgency": "normal", "deadline": NSNull(), "expires": NSNull(),
                 "created": JSONOutput.date(plan.made), "why_now": "还没选的话，螺壳搜索什么都搜不到",
                 "title": "螺壳搜索还没选要搜的地方",
-                "summary": "建议搜\(names)，点「好」就在后台开始建索引；照片图库默认不搜，要搜就勾上。",
+                "summary": "默认搜\(names)，点「好」就在后台开始建索引，都留在这台 Mac 上；照片图库、外接盘默认不搜。",
                 "card": Cards.setup(planID: plan.id, choices: setupChoices(plan), protected: isProtected(plan),
                                     surfaceID: "s-" + plan.id),
             ])
         }
         for (folder, number) in folderItems(settings) where !state.closed.contains(Self.folderID(folder, number)) {
-            let name = display(folder)
+            // Not by Finder's name: the folder can't be read, and asking may have macOS ask the user.
+            let name = placeName(folder)
             // Not one of the manifest's permissions (a folder is chosen in the settings), so no `permission`; `low` as
             // every needs-access (§1a).
             items.append([
@@ -899,7 +1006,7 @@ public final class SearchService: @unchecked Sendable {
     func outboxIDs(_ settings: Settings, _ state: ToolState) -> Set<String> {
         var ids: Set<String> = [Self.setupID]
         if state.photosItem > 0 { ids.insert(Self.photosID(state.photosItem)) }
-        for folder in settings.searched(restricted: restrictFolders, home: home) {
+        for folder in accessTargets(settings) {
             if let number = state.folderItems[folder] { ids.insert(Self.folderID(folder, number)) }
         }
         if let done = state.firstPassDone { ids.insert("index-ready/\(Int(done))") }
@@ -907,6 +1014,24 @@ public final class SearchService: @unchecked Sendable {
     }
 
     static func photosID(_ number: Int) -> String { "needs-access/photos/\(number)" }
+
+    /// The places whose access the outbox reports: each searched folder, and the folders macOS protects inside one
+    /// (the desktop, documents and downloads in a searched home folder, 11-10) that aren't skipped. The walk passes a
+    /// folder it can't list over quietly, keeping what was read of it; this is how the user hears of it.
+    func accessTargets(_ settings: Settings) -> [String] {
+        Self.accessTargets(settings.searched(restricted: restrictFolders, home: home, mounted: mountedVolumes()),
+                           skipped: settings.skipFolders, home: home)
+    }
+
+    static func accessTargets(_ searched: [String], skipped: [String], home: String) -> [String] {
+        // As the walk spells them: a home folder written either way is the one the walk goes through.
+        let walked = searched.map(Crawler.canonical), skips = skipped.map(Crawler.canonical)
+        let inside = ["Desktop", "Documents", "Downloads"].map { Crawler.canonical(home) + "/" + $0 }.filter { place in
+            !walked.contains(place) && walked.contains { place.hasPrefix($0 + "/") }
+                && !skips.contains { place == $0 || place.hasPrefix($0 + "/") }
+        }
+        return searched + inside
+    }
 
     static func folderID(_ folder: String, _ number: Int) -> String { "needs-access/" + folder + "/\(number)" }
 
@@ -920,7 +1045,7 @@ public final class SearchService: @unchecked Sendable {
     /// it's gone). Judged only by the resident (`judgesAccess`); any other process reports what the resident noted
     /// last and looks into no folder. The number is the time, as the Photos item's.
     func folderItems(_ settings: Settings) -> [(folder: String, number: Int)] {
-        let searched = settings.searched(restricted: restrictFolders, home: home)
+        let searched = accessTargets(settings)
         guard judgesAccess else {
             let state = ToolState.load(directory)
             return searched.compactMap { folder in state.folderItems[folder].map { (folder, $0) } }

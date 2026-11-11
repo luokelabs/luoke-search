@@ -23,7 +23,7 @@
 
 | 文件 | 内容 |
 |---|---|
-| `texts.json` | 全部 12 条文字输入，逐字：`name`、`prompt`（`query` 或 `document`）、`title`、`text`，和送给主控的 `input`（已带前缀）。前 5 条就是原来的 5 条，和 digup 的一字不差。`HubParityTests` 从这里读；luoke-core 的 `embed_parity.py` 现在还写着原来的 5 条，改成读这个文件以后就不用两边各抄一份。 |
+| `texts.json` | 全部 12 条文字输入，逐字：`name`、`prompt`（`query` 或 `document`）、`title`、`text`，和送给主控的 `input`（已带前缀）。前 5 条就是原来的 5 条，和 digup 的一字不差。`HubParityTests` 和 luoke-core 的 `tools/embed_parity.py` 都从这里读，不用两边各抄一份。 |
 | `vectors-extra.json` | 后来加的 7 条的参考向量，768 维，`made_with`、`vector_version` 和 `vectors.json` 一样。 |
 
 后来加的 7 条全是编的，不含个人数据：

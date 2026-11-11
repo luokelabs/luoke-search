@@ -38,9 +38,17 @@ struct SimilarTests {
             try #require(try store.item(path: scratch.path + "/files/" + relative)).id
         }
 
+        /// A searcher without the cosine floor: the fake hub's vectors (words hashed) are named like the model's but
+        /// aren't its cosines. The floor is `RelevanceCutTests`'.
+        func searcher() -> Searcher {
+            let searcher = Searcher(store: store)
+            searcher.cutsWeakHits = false
+            return searcher
+        }
+
         /// The titles `similar` lists for a result id.
         func similar(_ id: String, limit: Int = 10) throws -> [String] {
-            try #require(try Searcher(store: store).similar(to: id, options: SearchOptions(limit: limit))).hits.map(\.title)
+            try #require(try searcher().similar(to: id, options: SearchOptions(limit: limit))).hits.map(\.title)
         }
     }
 
@@ -49,7 +57,7 @@ struct SimilarTests {
         let folder = try Folder()
         let contract = String(try folder.id("租房/合同.md"))
         try folder.store.db.execute("UPDATE items SET source = 'photos' WHERE id = \(try folder.id("租房/收据.md"))")
-        let searcher = Searcher(store: folder.store)
+        let searcher = folder.searcher()
         let shown = try #require(try searcher.similar(to: contract))
         #expect(shown.totals?["photos"] == 1)
         var options = SearchOptions()
@@ -66,7 +74,7 @@ struct SimilarTests {
     func closestFirst() throws {
         let folder = try Folder()
         let contract = try folder.id("租房/合同.md")
-        let answer = try #require(try Searcher(store: folder.store).similar(to: String(contract)))
+        let answer = try #require(try folder.searcher().similar(to: String(contract)))
         let titles = answer.hits.map(\.title)
         #expect(!titles.contains("合同.md"))
         #expect(Set(titles.prefix(3)) == ["续租.md", "收据.md", "杂记.txt"])
@@ -116,7 +124,7 @@ struct SimilarTests {
         let later = try add(.audio, 50, "audio"), page = try add(.page, 3, "image")
         let unit = [Float](repeating: 1 / Float(VectorMath.dimension).squareRoot(), count: VectorMath.dimension)
         try folder.store.setVectors([frame, sound, later, page].map { ($0, unit) }, space: nil)
-        let searcher = Searcher(store: folder.store)
+        let searcher = folder.searcher()
         func part(_ kind: SegmentKind, _ loc: Double) throws -> [Int64] {
             let id = Searcher.hitID(item, kind, loc)
             return try searcher.vectorSegments(item: item, part: String(id.split(separator: "#")[1]))
@@ -132,7 +140,7 @@ struct SimilarTests {
     @Test("Similar: no such item is nil; one with no vector yet says so; a file gone since isn't listed")
     func edges() throws {
         let folder = try Folder()
-        let searcher = Searcher(store: folder.store)
+        let searcher = folder.searcher()
         #expect(try searcher.similar(to: "999999") == nil)
         #expect(try searcher.similar(to: "not-an-id") == nil)
         // Written after the vectors were filled: read, but no vector.
@@ -155,7 +163,7 @@ struct SimilarTests {
     @Test("A filter that leaves a meaning search empty keeps its counts, and doesn't list the newest of the kind")
     func filteredEmptyIsntNothingFound() throws {
         let folder = try Folder()
-        let searcher = Searcher(store: folder.store)
+        let searcher = folder.searcher()
         var segment: Int64?
         try folder.store.db.query("SELECT id FROM segments WHERE item = ? AND vec IS NOT NULL LIMIT 1",
                                   [.int(try folder.id("租房/合同.md"))]) { segment = $0.int(0) }
@@ -169,7 +177,7 @@ struct SimilarTests {
         #expect(photos.hits.isEmpty && photos.totals == ["files": found, "photos": 0])
     }
 
-    @Test("search_similar: listed read-only, answers in the window's shape; results with vectors get the button")
+    @Test("search_similar: listed read-only, answers in the window's shape; not a button on the window's hits")
     func theTool() throws {
         let folder = try Folder()
         let service = try SearchService(directory: DataDirectory(url: folder.scratch.url.appendingPathComponent("data")),
@@ -193,14 +201,13 @@ struct SimilarTests {
         #expect((tool["annotations"] as? [String: Bool])?["readOnlyHint"] == true)
         #expect((tool["inputSchema"] as? [String: Any])?["required"] as? [String] == ["id"])
 
-        // A search's hit with vectors carries 「找相似的」 with its own id; pressing it lists the others.
+        // A search's hit carries opening it only, not 「找相似的」 (a hit's button answers in one sentence, this one
+        // answers with new results); asked with the hit's id, the tool lists the others.
         let found = try #require(try hits(call("search_query", ["query": "租房合同"])).first { $0["title"] as? String == "合同.md" })
         let actions = found["actions"] as? [[String: Any]] ?? []
-        let button = try #require(actions.first { $0["name"] as? String == "search_similar" })
-        #expect(button["title"] as? String == "找相似的")
-        #expect((button["args"] as? [String: Any])?["id"] as? String == found["id"] as? String)
-        #expect(button["primary"] == nil)
-        let similar = call("search_similar", button["args"] as? [String: Any] ?? [:])
+        #expect(!actions.isEmpty && actions.allSatisfy { $0["name"] as? String == "search_open" })
+        let args: [String: Any] = ["id": try #require(found["id"] as? String)]
+        let similar = call("search_similar", args)
         let listed = try hits(similar)
         #expect(!listed.isEmpty && !listed.contains { $0["title"] as? String == "合同.md" })
         #expect(listed.first?["source"] as? String == "files")
@@ -208,7 +215,8 @@ struct SimilarTests {
         #expect((similar["structuredContent"] as? [String: Any])?["skipped"] is [Any])
         let totals = try #require((similar["structuredContent"] as? [String: Any])?["totals"] as? [String: Int])
         #expect(totals["files"] == listed.count && totals["photos"] == 0)
-        #expect(try hits(call("search_similar", (button["args"] as? [String: Any] ?? [:]).merging(["sources": ["photos"]]) { $1 })).isEmpty)
+        #expect(try hits(call("search_similar", args.merging(["sources": ["photos"]]) { $1 })).isEmpty)
+        #expect(try hits(similar).allSatisfy { ($0["actions"] as? [[String: Any]] ?? []).allSatisfy { $0["name"] as? String == "search_open" } })
         #expect(((similar["content"] as? [[String: Any]])?.first?["text"] as? String)?.hasPrefix("找到") == true)
         // No such item: stale. No id: invalid.
         #expect(similar["isError"] as? Bool != true)
@@ -217,7 +225,7 @@ struct SimilarTests {
         let missing = call("search_similar", [:])
         #expect(missing["isError"] as? Bool == true)
 
-        // One with no vector: no button, and pressing it anyway says why.
+        // One with no vector: asking anyway says why.
         try folder.scratch.write("files/租房/新的.md", "# 新的\n租房合同的押金两个月。")
         _ = try folder.indexer.sync([folder.scratch.path + "/files"])
         try folder.indexer.readPending()

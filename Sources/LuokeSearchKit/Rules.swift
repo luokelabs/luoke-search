@@ -25,6 +25,9 @@ public enum Rules {
     static let docExtensions: Set<String> = [
         "txt", "text", "md", "markdown", "rtf", "doc", "docx", "odt", "html", "htm", "xlsx", "pptx", "csv", "tsv",
     ]
+    /// The documents that are tables (read as worksheets): the window shows them as 「表格」, with a picture of their
+    /// first rows. The index keeps them as `doc`.
+    public static let sheetExtensions: Set<String> = ["xlsx", "csv", "tsv"]
     static let imageExtensions: Set<String> = [
         "jpg", "jpeg", "png", "heic", "heif", "webp", "avif", "tif", "tiff", "gif", "bmp", "svg",
         "dng", "cr2", "cr3", "nef", "arw", "orf", "rw2", "raf",
@@ -54,6 +57,11 @@ public enum Rules {
             return .video
         }
         return nil
+    }
+
+    /// Whether a document's file is a table (`sheetExtensions`).
+    public static func isSheet(_ path: String) -> Bool {
+        sheetExtensions.contains((path as NSString).pathExtension.lowercased())
     }
 
     /// A screenshot: macOS marks the ones it takes (the mark survives moving and copying); other tools are known by
@@ -201,6 +209,15 @@ public enum Rules {
     ]
     static let projectBundleExtensions: Set<String> = ["xcodeproj", "xcworkspace"]
 
+    /// Folders right in the home folder that hold tools, not the user's files (11-10, once the whole home folder is
+    /// searched): apps installed for this user, Python and Go installs, a Unix tree, virtual machines.
+    static let homeToolFolders: Set<String> = [
+        "Applications", "miniconda3", "anaconda3", "miniforge3", "mambaforge", "go", "opt",
+        "Parallels", "Virtual Machines", "Virtual Machines.localized", "VirtualBox VMs", "UTM",
+    ]
+    /// A virtual machine's folder, wherever it is (most are packages, passed over as such; not on every disk).
+    static let virtualMachineExtensions: Set<String> = ["pvm", "vmwarevm", "utm", "vbox", "qemu"]
+
     /// Why a folder isn't walked into, or nil to walk it. `home` is the user's home; `excluded` the folders the user
     /// skipped.
     public static func skipReason(folder: URL, home: String, excluded: [String]) -> String? {
@@ -211,6 +228,10 @@ public enum Rules {
         if isCredentialName(name) { return "credential folder" }
         if name.hasSuffix(".noindex") { return ".noindex folder" }
         if path == home + "/Library" { return "~/Library" }
+        // The Music folder is mostly the music library (11-10); it's searched only when chosen itself.
+        if path == home + "/Music" { return "~/Music" }
+        if homeToolFolders.contains(name), path == home + "/" + name { return "tool folder" }
+        if virtualMachineExtensions.contains((name as NSString).pathExtension.lowercased()) { return "virtual machine" }
         if excluded.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) { return "excluded folder" }
         return nil
     }

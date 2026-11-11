@@ -8,7 +8,8 @@ Nine folders as a person keeps them, each a document and the pictures that go wi
 the animals, a balcony garden's notes and photos of the flowers, a child's piano lessons and photos of instruments,
 a company sports day (English) and photos of balls, a desert hike and photos of what's on the way, a gingerbread
 recipe and photos of the baking, an invoice as a PDF and photographed, a router's manual and a screenshot of its admin
-page, a business trip's itinerary and a photo of the boarding pass. The documents name some of what the pictures show
+page, a business trip's itinerary and a photo of the boarding pass, a passport renewal's notes and a passport's cover,
+data page and ID photo (all made up: a specimen name and number). The documents name some of what the pictures show
 and not the rest (the questions ask about both kinds). Around them: 60 documents on other things (fixed seed) and a
 folder of 17 other sample pictures. Pictures have neutral names (IMG_4101.jpg); the photos are macOS's sample pictures
 (/Library/User Pictures), the papers and screens are drawn (scripts/testbed/same_render.swift). Everything is
@@ -89,6 +90,16 @@ FOLDERS = {
         "lines": ["登机牌  BOARDING PASS", "CA4113   北京首都 → 成都天府", "日期 26OCT    座位 32A",
                   "登机口 C12    登机时间 09:25"],
     },
+    "证件": {
+        "docs": {"护照续签.md": "# 护照续签\n\n护照明年三月到期，要提前两个月去出入境大厅换发。带上旧护照、身份证和两张近半年的证件照："
+                 "白底，48 × 33 毫米，不戴眼镜，露出眉毛和耳朵。大厅里可以现场拍，30 元。办好以后七个工作日寄到家。"},
+        "drawn": [("IMG_4181.jpg", "booklet", ["中华人民共和国", "护照", "PASSPORT"]),
+                  ("IMG_4182.jpg", "paper", ["护照  PASSPORT", "类型 P    国家码 CHN    护照号 E00000000",
+                                             "姓名  样本 / YANGBEN CESHI", "出生日期  01 JAN 1990",
+                                             "签发日期 05 MAR 2017    有效期至 04 MAR 2027",
+                                             "P<CHNYANGBEN<<CESHI<<<<<<<<<<<<<<<<<<<<<"]),
+                  ("IMG_4183.jpg", "portrait", [])],
+    },
 }
 
 # Other sample pictures, in a folder of their own: they compete with the photos above (a white rose, other balls).
@@ -132,8 +143,10 @@ def main():
                 f.write(text + "\n")
         for name, source in content.get("photos", {}).items():
             jpeg(source, os.path.join(path, name))
-        for name, kind in content.get("drawn", []):
-            spec.append({"path": os.path.abspath(os.path.join(path, name)), "kind": kind, "lines": content["lines"]})
+        for drawn in content.get("drawn", []):
+            name, kind = drawn[0], drawn[1]
+            lines = drawn[2] if len(drawn) > 2 else content["lines"]
+            spec.append({"path": os.path.abspath(os.path.join(path, name)), "kind": kind, "lines": lines})
     if ALBUM:
         others = os.path.join(OUT, "相册", "2026-08")
         os.makedirs(others)

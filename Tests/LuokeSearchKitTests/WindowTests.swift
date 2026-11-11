@@ -111,20 +111,10 @@ extension ReadsPictures {
             #expect(try withExtendedLifetime(scratch) { try $0.store().lastRead() } == nil)
         }
 
-        @Test("Many folders: the page stays within what a card may hold")
-        func manyFoldersAreCounted() throws {
-            let page = Cards.overview(exact: SearchState("可用"), semantic: SearchState("可用"), note: nil, folders: (1...300).map { "文件夹\($0)" }, photos: "off",
-                                      lastRead: nil, photosSwitch: true)
-            let texts = Self.pageTexts(page)
-            #expect(texts.contains("300 个") && texts.contains("还没有"))
-            let names = try #require(texts.first { $0.hasPrefix("文件夹1、") })
-            #expect(names.hasSuffix("文件夹\(Cards.maxFoldersShown) 等"))
-        }
-
         @Test("Under way, a line holds a bar and the count")
         func theLineWithABar() throws {
             let page = Cards.overview(exact: .progress(1, of: 4), semantic: SearchState("可用"), note: nil, folders: [],
-                                      photos: "off", lastRead: nil, photosSwitch: false)
+                                      photos: "off", lastRead: nil, changeable: false)
             let components = page.flatMap { (($0["updateComponents"] as? [String: Any])?["components"] as? [[String: Any]]) ?? [] }
             let bar = try #require(components.first { $0["component"] as? String == "ProgressBar" })
             #expect(bar["value"] as? Double == 0.25)
@@ -136,9 +126,10 @@ extension ReadsPictures {
 
         @Test("Each line is a name on the left and a value on the right; nothing to add leaves no sentence on top")
         func thePageIsAList() throws {
-            let page = Cards.overview(exact: SearchState("可用"), semantic: SearchState("可用"), note: nil, folders: ["资料"], photos: "off", lastRead: nil, photosSwitch: true)
+            let page = Cards.overview(exact: SearchState("可用"), semantic: SearchState("可用"), note: nil, folders: [(name: "资料", id: "a1")], photos: "off", lastRead: nil, changeable: true)
             let components = page.flatMap { (($0["updateComponents"] as? [String: Any])?["components"] as? [[String: Any]]) ?? [] }
-            #expect(components.filter { $0["justify"] as? String == "spaceBetween" }.count == 5)
+            // The two ways of searching, the folders' count, the folder, the photos switch, what was read lately.
+            #expect(components.filter { $0["justify"] as? String == "spaceBetween" }.count == 6)
             let toggle = try #require(components.first { $0["variant"] as? String == "switch" })
             #expect(toggle["component"] as? String == "Button" && toggle["on"] as? Bool == false)
             let event = (toggle["action"] as? [String: Any])?["event"] as? [String: Any]
@@ -146,7 +137,7 @@ extension ReadsPictures {
             #expect(Self.pageTexts(page).prefix(4) == ["精确搜索", "可用", "语义搜索", "可用"])
 
             let noted = Cards.overview(exact: SearchState("可用"), semantic: SearchState("可用"), note: "在用电池。", folders: [], photos: "off",
-                                       lastRead: nil, photosSwitch: false)
+                                       lastRead: nil, changeable: false)
             #expect(Self.pageTexts(noted)[4] == "在用电池。")
         }
 
@@ -215,7 +206,7 @@ extension ReadsPictures {
         @Test("No folders chosen yet, so no switch: photos on and not allowed still say what to do")
         func thePageWithoutTheSwitch() {
             let page = Cards.overview(exact: SearchState("可用"), semantic: SearchState("可用"), note: nil, folders: [],
-                                      photos: "needs_access", lastRead: nil, photosSwitch: false)
+                                      photos: "needs_access", lastRead: nil, changeable: false)
             #expect(Self.pageButton(page, "允许") != nil)
             #expect(!Self.pageTexts(page).contains("开"))
         }

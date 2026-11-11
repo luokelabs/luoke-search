@@ -15,14 +15,14 @@ Luoke Search is a component of [Luoke](https://github.com/luokelabs/luoke). For 
 
 ## Status
 
-- **Version 0.1.14, first released with Luoke beta 2** (closed beta).
+- **Version 0.1.21, first released with Luoke beta 2** (closed beta).
 - **Requirements**: macOS 26.2 or later. Search by meaning needs Luoke installed (Luoke itself needs a Mac with Apple silicon).
 - Search by meaning for pictures, videos and recordings needs Luoke's model to take pictures and sound; without it they are found by file name and by the text recognized in pictures only.
 - Search by meaning is weak for recordings: questions score noticeably lower against Chinese speech than against the same words as text. See the [evals](evals/README.md) (in Chinese).
 
 ## How to use it
 
-Download Luoke from [luoke.ai](https://luoke.ai). Luoke installs and updates Luoke Search, which starts in the background when you log in and does not appear in the Dock. The first time, Luoke asks which folders to search (it suggests Desktop, Documents and Downloads). The Photos library is not searched by default; when you want it, Luoke has macOS ask you.
+Download Luoke from [luoke.ai](https://luoke.ai). Luoke Search comes inside the Luoke app and is updated with Luoke; once you turn it on in Luoke, Luoke starts it in the background. It does not appear in the Dock. By default it searches your home folder and iCloud Drive, with nothing to pick; what you don't want searched you take out or skip on Luoke Search's page. When you turn it on, macOS asks you in turn whether it may read Desktop, Documents, Downloads and iCloud Drive. External disks and the Photos library are not searched until you click to search them.
 
 ## Building from source
 
@@ -48,16 +48,18 @@ python3 -I scripts/fake_hub.py --socket /tmp/lsfake.sock --mode-file .dev/fake-h
 LUOKE_HUB_SOCKET=/tmp/lsfake.sock .build/debug/luoke-search index <folder> --index .dev/try --wait
 ```
 
-To build the app: `sh scripts/build_app.sh` → `build.noindex/螺壳搜索.app` (how to run it during development and unregister it afterwards is at the top of the script). How to run the eval question sets and corpora is in [evals/README.md](evals/README.md) (in Chinese). The photos, recordings and videos of `testbed/zh` are macOS's own sample material and are not in the repository; make them on your Mac with `scripts/testbed/make_zh_media.sh` before an eval.
+What Luoke carries is the program built by `LUOKE_OUT=<folder> sh scripts/build_helper.sh`, which Luoke's build puts inside the Luoke app (see the top of the script). `sh scripts/build_app.sh` → `build.noindex/螺壳搜索.app` is only for trying it on its own during development (how to run it and unregister it afterwards is at the top of the script). How to run the eval question sets and corpora is in [evals/README.md](evals/README.md) (in Chinese). The photos, recordings and videos of `testbed/zh` are macOS's own sample material and are not in the repository; make them on your Mac with `scripts/testbed/make_zh_media.sh` before an eval.
 
 ## Data and privacy
 
-- **Luoke Search itself makes no network connections.** It talks only to Luoke's Unix socket on your Mac (for vectors), and luoke-agent talks to its socket. When you open a result, the app that opens it (a browser for an `.html` file, say) may go online, which is why opening always takes your click.
+- **Luoke Search itself makes no network connections.** It talks only to Luoke's Unix socket on your Mac (for vectors), to luoke-agent, which connects to its socket, and to descriptor 3, which Luoke gives it when starting it (`LUOKE_HOST_FD`: to tell that Luoke started it, to say it is up, and to ask Luoke to play a recording or video from a given second). The copy inside Luoke.app runs only when Luoke starts it: run directly from a terminal, everything but `status` is refused, and its socket answers only requests carrying the token Luoke gave it this time. When you open a result, the app that opens it (a browser for an `.html` file, say) may go online, which is why opening always takes your click.
+- **Where it searches**: your home folder and iCloud Drive by default, and you can take them out. Left out: hidden folders, the Library folder (but for iCloud Drive; chats, mail and caches live there), Music, folders of tools in your home folder (Applications, miniconda3, go, opt, virtual machines and the like), code in code projects, and cloud storage such as Dropbox and OneDrive. Never the whole disk, even with Full Disk Access. External disks and the Photos library only once you click; a disk is remembered by its identifier, so another disk with the same name isn't searched.
 - **It only reads your files**: it never changes, moves or uploads them. Files that are only in iCloud and not on this Mac are not downloaded; they are read once they are back. In the Photos library, too, only what is already on this Mac is read.
+- **When photos aren't allowed**: with the Photos library turned on but permission to read it not given in Luoke, or taken back, photos are not found in Luoke: they are left out of search results, "find similar" and the counts by source. What was read stays in the index on your Mac, so allowing it again needs no rebuild. The command line, run directly in a terminal, doesn't check this permission and still finds the photos read before. If you deny it in System Settings instead, the photos read before are still found, but no longer follow changes to the library.
 - **Credentials**: files named like passwords, keys or certificates (`id_rsa`, `.env`, `*.pem`, `密码.txt`…) are skipped from the start, without reading them. Passwords or card numbers written inside other files are kept as written in the index on your Mac (so the full number still finds them); in the results, cards and passages that go out, passwords, one-time codes and keys are masked in full, and card and ID numbers keep only their last 4 digits.
 - **Where data lives**: the index and settings are in `~/.luoke-search/`, which only your account can open (700) and which is kept out of Time Machine. Deleting that folder deletes the whole index. Its log lines hold only metadata (how many files, how long it took), never search terms, passages or file contents.
 - **Changes need your click**: changing settings, opening a file or having macOS ask for a permission happens only after you click on a card in Luoke.
-- It never reaches out on its own: no notifications and no pushed results. It tells you something, through Luoke, only when you need to pick folders, when it needs your permission to read, and when the first pass of indexing is done.
+- It never reaches out on its own: no notifications and no pushed results. It tells you something, through Luoke, only when searching hasn't been set up yet, when it needs your permission to read, and when the first pass of indexing is done.
 
 ## Documentation
 
